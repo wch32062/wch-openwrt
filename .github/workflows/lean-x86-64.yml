@@ -4,7 +4,7 @@
 # Author: kenzo
 #=================================================
 
-name: Lean_5.4内核
+name: Lean_5.10内核
 
 on: 
 # Release 发布触发
@@ -13,8 +13,8 @@ on:
     
 # 编辑触发    
 #  push:
-#    branches: 
-#      - master
+    branches: 
+      - master
       
 # 定时触发      
   schedule:
