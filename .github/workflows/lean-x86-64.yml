@@ -13,10 +13,10 @@ on:
     
 # 编辑触发    
 #  push:
-    branches: 
-      - master
+#    branches: 
+#      - master
       
-# 定时触发      
+定时触发      
   schedule:
     - cron: 0 */48 * * *
 
