@@ -16,7 +16,7 @@ on:
 #    branches: 
 #      - master
       
-定时触发      
+# 定时触发      
   schedule:
     - cron: 0 */48 * * *
 
