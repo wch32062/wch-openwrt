@@ -4,7 +4,7 @@
 # Author: kenzo
 #=================================================
 
-name: Lean_5.4内核
+name: Lean_5.X.Y内核
 
 on: 
 #  release:
@@ -64,7 +64,7 @@ jobs:
       run: |
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
         cd openwrt
-        echo "src-git ssrp https://github.com/fw876/helloworld.git" >> ./feeds.conf.default
+        echo "src-git helloworld https://github.com/fw876/helloworld.git" >> ./feeds.conf.default
         
     - name: 更新 & 安装 feeds
       working-directory: ./openwrt
