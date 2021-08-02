@@ -11,14 +11,14 @@ on:
 #    types: [published]
     
 #  push:
-#    branches: 
-#      - master
+    branches: 
+      - master
       
 #  schedule:
 #    - cron: 0 */48 * * *
   
-  watch:
-    types: started
+#  watch:
+#    types: started
 
 jobs:
   build:
