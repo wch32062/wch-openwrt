@@ -11,7 +11,7 @@
 #
 
 # Add a feed source
-#sed -i '$a src-git lienol https://github.com/Lienol/openwrt-package' feeds.conf.default
-#sed -i '$a src-git hellowrld https://github.com/fw876/helloworld' feeds.conf.default                
-#sed -i '$a src-git passwall https://github.com/xiaorouji/openwrt-passwall package/passwall' feeds.conf.default
-#sed -i '$a src-git litte https://github.com/kenzok8/litte package/litte' feeds.conf.default
+sed -i '$a src-git lienol https://github.com/Lienol/openwrt-package' feeds.conf.default
+sed -i '$a src-git hellowrld https://github.com/fw876/helloworld' feeds.conf.default                
+sed -i '$a src-git passwall https://github.com/xiaorouji/openwrt-passwall package/passwall' feeds.conf.default
+sed -i '$a src-git litte https://github.com/kenzok8/litte package/litte' feeds.conf.default
