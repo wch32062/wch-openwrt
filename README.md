@@ -9,7 +9,7 @@ Welcome to wch32062's  git source of OpenWrt and packages
 
   首先装好 Ubuntu 64bit，推荐  Ubuntu  18.04 LTS x64
 
-编译命令如下:
+编译命令如下
 -
 ```bash
 sudo apt-get update
@@ -27,7 +27,7 @@ source /etc/environment
 make -j8 download
 make -j1 V=s 
 ```
-不改配置：
+二次编译不改配置：
 -
 ```bash
 cd lede
@@ -39,7 +39,7 @@ make -j8 download
 make -j$(($(nproc) + 1)) V=s
 ```
 
-重新配置：
+二次编译重新配置：
 -
 ```bash
 cd lede
