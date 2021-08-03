@@ -1,4 +1,4 @@
-Welcome to wch's  git source of OpenWrt and packages
+Welcome to wch32062's  git source of OpenWrt and packages
 =
 中文：如何编译自己需要的 OpenWrt 固件
 -
