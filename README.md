@@ -27,7 +27,7 @@ source /etc/environment
 make -j8 download
 make -j1 V=s 
 ```
-二次编译不改配置：
+二次编译不改配置
 -
 ```bash
 cd lede
@@ -39,7 +39,7 @@ make -j8 download
 make -j$(($(nproc) + 1)) V=s
 ```
 
-二次编译重新配置：
+二次编译重新配置
 -
 ```bash
 cd lede
@@ -54,7 +54,6 @@ make -j$(($(nproc) + 1)) V=s
 
 特别感谢：
 =
-
 Lean's源代码；
 Lienol源代码；
 P3TERX源代码；
