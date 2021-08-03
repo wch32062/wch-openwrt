@@ -57,4 +57,5 @@ make -j$(($(nproc) + 1)) V=s
 
 Lean's源代码；
 Lienol源代码；
+P3TERX源代码；
 -
