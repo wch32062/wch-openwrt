@@ -9,8 +9,8 @@
 # File name: diy-part1.sh
 # Description: OpenWrt DIY script part 1 (Before Update feeds)
 #
+#Add a feed source
 
-Add a feed source
-echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
+echo 'src-git small https://github.com/kenzok8/small' >>feeds.conf.default
 echo 'src-git kenzo https://github.com/kenzok8/openwrt-packages' >>feeds.conf.default
-echo 'src-git  litte https://github.com/kenzok8/litte package/litte' >>feeds.conf.default
+echo 'src-git jerryk https://github.com/jerrykuku/openwrt-package' >>feeds.conf.default
