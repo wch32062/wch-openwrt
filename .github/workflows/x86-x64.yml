@@ -1,165 +1,164 @@
 #
-#版权所有 (c) 2019-2020 P3TERX <https://p3terx.com>
+# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
 #
-#这是免费软件，在 MIT 许可下获得许可。
-#有关详细信息，请参阅 /LICENSE。
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
 #
 # https://github.com/P3TERX/Actions-OpenWrt
-#描述：使用 GitHub Actions 构建 OpenWrt
+# Description: Build OpenWrt using GitHub Actions
 #
 
-名称：x86-x64
+name: x86-x64
 
-在：
-  存储库调度：
-  工作流调度：
-    输入：
-      SSH :
-        描述：' SSH 连接到 Actions '
-        要求：真
-        默认值：'真'
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      ssh:
+        description: 'SSH connection to Actions'
+        required: true
+        default: 'true'
 
-环境：
-  REPO_URL : https://github.com/coolsnowwolf/lede
-  REPO_BRANCH :主
-  FEEDS_CONF : feeds.conf.default
-  CONFIG_FILE : .config
-  DIY_P1_SH : diy-part1.sh
-  DIY_P2_SH : diy-part2.sh
-  UPLOAD_BIN_DIR :真
-  UPLOAD_FIRMWARE :真
-  UPLOAD_COWTRANSFER :真
-  UPLOAD_WETRANSFER :真
-  UPLOAD_RELEASE :真
-  TZ :亚洲/上海
+env:
+  REPO_URL: https://github.com/coolsnowwolf/lede
+  REPO_BRANCH: master
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: .config
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_COWTRANSFER: true
+  UPLOAD_WETRANSFER: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
 
-工作：
-  构建：
-    运行：ubuntu-18.04
+jobs:
+  build:
+    runs-on: ubuntu-18.04
 
-    步骤：
-    -名称：结帐
-      用途：动作/结帐@main
+    steps:
+    - name: Checkout
+      uses: actions/checkout@main
 
-    -名称：初始化环境
-      环境：
-        DEBIAN_FRONTEND :非交互式
-      运行：|
-        须藤 rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        须藤 -E apt-get -qq 更新
-        须藤 -E apt-get -qq 安装 $(curl -fsSL git.io/depends-ubuntu-1804)
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-1804)
         sudo -E apt-get -qq autoremove --purge
-        须藤 -E apt-get -qq 清洁
-        须藤 timedatectl 设置时区“$TZ”
-        须藤 mkdir -p /workdir
-        须藤 chown $USER:$GROUPS /workdir
-    -名称：克隆源代码
-      工作目录：/workdir
-      运行：|
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
+    - name: Clone source code
+      working-directory: /workdir
+      run: |
         df -hT $PWD
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-    -名称：加载自定义提要
-      运行：|
+    - name: Load custom feeds
+      run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
-    -名称：更新提要
-      运行：cd openwrt && ./scripts/feeds update -a
+    - name: Update feeds
+      run: cd openwrt && ./scripts/feeds update -a
 
-    -名称：安装提要
-      运行：cd openwrt && ./scripts/feeds install -a
+    - name: Install feeds
+      run: cd openwrt && ./scripts/feeds install -a
 
-    -名称：加载自定义配置
-      运行：|
-        [ -e 文件 ] && mv 文件 openwrt/files
+    - name: Load custom configuration
+      run: |
+        [ -e files ] && mv files openwrt/files
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-    -名称：SSH 连接到 Actions
-      用途：P3TERX/ssh2actions@v1.0.0
-      如果：(github.event.inputs.ssh == 'true' && github.event.inputs.ssh != 'false') || 包含（github.event.action，'ssh'）
-      环境：
-        TELEGRAM_CHAT_ID : ${{ secrets.TELEGRAM_CHAT_ID }}
-        TELEGRAM_BOT_TOKEN : ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    - name: SSH connection to Actions
+      uses: P3TERX/ssh2actions@v1.0.0
+      if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
+      env:
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
-    -名称：下载包
-      id :包
-      运行：|
+    - name: Download package
+      id: package
+      run: |
         cd openwrt
-        进行定义
-        进行下载 -j8
+        make defconfig
+        make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
-    -名称：编译固件
-      id：编译
-      运行：|
+    - name: Compile the firmware
+      id: compile
+      run: |
         cd openwrt
-        echo -e "$(nproc) 线程编译"
+        echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "::set-output name=status::success"
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-    -名称：检查空间使用情况
-      如果：（！取消（））
-      运行：df -hT
+    - name: Check space usage
+      if: (!cancelled())
+      run: df -hT
 
-    -名称：上传bin目录
-      用途：动作/上传工件@main
-      如果：steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-      与：
-        名称：OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        路径：openwrt/bin
+    - name: Upload bin directory
+      uses: actions/upload-artifact@main
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: openwrt/bin
 
-    -名称：整理文件
-      id :组织
-      如果：env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-      运行：|
+    - name: Organize files
+      id: organize
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
         cd openwrt/bin/targets/*/*
-        rm -rf 包
+        rm -rf packages
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "::set-output name=status::success"
-    -名称：上传固件目录
-      用途：动作/上传工件@main
-      如果：steps.organize.outputs.status == 'success' && !cancelled()
-      与：
-        名称：OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        路径：${{ env.FIRMWARE }}
+    - name: Upload firmware directory
+      uses: actions/upload-artifact@main
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
       
-    -名称：生成发布标签
-      id :标签
-      如果：env.UPLOAD_RELEASE == 'true' && !cancelled()
-      运行：|
+    - name: Generate release tag
+      id: tag
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      run: |
         echo "::set-output name=release_tag::$(date +"%Y.%m.%d-%H%M")"
-        触摸释放.txt
+        touch release.txt
         [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
         [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
         echo "::set-output name=status::success"
-    -名称：上传固件发布
-      用途：softprops/action-gh-release@v1
-      如果：steps.tag.outputs.status == 'success' && !cancelled()
-      环境：
-        GITHUB_TOKEN : ${{ secrets.GITHUB_TOKEN }}
-      与：
-        标签名称：${{ steps.tag.outputs.release_tag }}
-        body_path : release.txt
-        文件：${{ env.FIRMWARE }}/*
+    - name: Upload firmware to release
+      uses: softprops/action-gh-release@v1
+      if: steps.tag.outputs.status == 'success' && !cancelled()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
+        files: ${{ env.FIRMWARE }}/*
 
-    -名称：删除工作流运行
-      用途：GitRML/delete-workflow-runs@main
-      与：
-        保留天数：1
-        keep_minimum_runs : 3
+    - name: Delete workflow runs
+      uses: GitRML/delete-workflow-runs@main
+      with:
+        retain_days: 1
+        keep_minimum_runs: 3
 
-    -名称：删除旧版本
-      用途：dev-drprasad/delete-older-releases@v0.1.0
-      如果：env.UPLOAD_RELEASE == 'true' && !cancelled()
-      与：
-        保持最新：3
-        delete_tags :真
-      环境：
-        GITHUB_TOKEN : ${{ secrets.GITHUB_TOKEN }}
-© 2021 GitHub, Inc.
+    - name: Remove old Releases
+      uses: dev-drprasad/delete-older-releases@v0.1.0
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      with:
+        keep_latest: 3
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
