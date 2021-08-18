@@ -43,8 +43,8 @@ make -j$(($(nproc) + 1)) V=s
 -
 ```bash
 cd lede
-git pull
 source /etc/environment
+git pull
 ./scripts/feeds update -a && ./scripts/feeds install -a
 rm -rf ./tmp && rm -rf .config
 make menuconfig
