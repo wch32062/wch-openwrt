@@ -15,3 +15,4 @@ echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.co
 echo 'src-git kiddin9 https://github.com/kiddin9/openwrt-packages' >>feeds.conf.default
 echo 'src-git OpenClash https://github.com/vernesong/OpenClash' >>feeds.conf.default
 echo 'src-git adguardhome https://github.com/rufengsuixing/luci-app-adguardhome' >>feeds.conf.default
+echo 'src-git smartdns https://github.com/pymumu/luci-app-smartdns/tree/master/htdocs/luci-static/resources/view/smartdns' >>feeds.conf.default
