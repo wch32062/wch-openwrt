@@ -16,4 +16,4 @@ echo 'src-git kiddin9 https://github.com/kiddin9/openwrt-packages' >>feeds.conf.
 echo 'src-git OpenClash https://github.com/vernesong/OpenClash' >>feeds.conf.default
 echo 'src-git adguardhome https://github.com/rufengsuixing/luci-app-adguardhome' >>feeds.conf.default
 echo 'src-git kenzo https://github.com/kenzok8/openwrt-packages' >>feeds.conf.default
-echo 'src-git opentopd  https://github.com/sirpdboy/luci-theme-opentopd' >>feeds.conf.default
+echo 'src-git opentopd https://github.com/sirpdboy/luci-theme-opentopd' >>feeds.conf.default
