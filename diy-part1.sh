@@ -12,7 +12,7 @@
 #Add a feed source
 echo 'src-git helloworld https://github.com/fw876/helloworld.git' >>feeds.conf.default
 echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
-echo 'src-git kiddin9 https://github.com/kiddin9/openwrt-packages' >>feeds.conf.default
+# echo 'src-git kiddin9 https://github.com/kiddin9/openwrt-packages' >>feeds.conf.default
 echo 'src-git OpenClash https://github.com/vernesong/OpenClash' >>feeds.conf.default
-echo 'src-git kenzo https://github.com/kenzok78/jeii package/jeii ' >>feeds.conf.default
-
+# echo 'src-git kenzo https://github.com/kenzok78/jeii package/jeii ' >>feeds.conf.default
+echo 'src-git litte  https://github.com/kenzok8/litte package/litte ' >>feeds.conf.default
