@@ -12,9 +12,9 @@
 
 # Add a feed source
 echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
-# echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
+echo 'src-git small https://github.com/kenzok8/small' >>feeds.conf.default
 echo 'src-git origin https://github.com/vernesong/OpenClash' >>feeds.conf.default
 echo 'src-git lienol https://github.com/Lienol/openwrt-package' >>feeds.conf.default
 git clone https://github.com/tty228/luci-app-serverchan.git package/luci-app-serverchan
 git clone https://github.com/firker/diy-ziyong.git package/diy-ziyong
-git clone https://github.com/xiaorouji/openwrt-passwall.git package/lienol
+
