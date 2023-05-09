@@ -115,20 +115,13 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
-    - name: Download package ${{matrix.target}}
+    - - name: Download package
       id: package
       run: |
         cd openwrt
-        rm -rf feeds/luci/themes/luci-theme-argon
-        ./scripts/feeds update -a && ./scripts/feeds install -a
-        cp -f feeds/smpackage/diy/zzz-default-settings package/default-settings/files/zzz-default-settings
-        cp -f feeds/smpackage/diy/banner package/base-files/files/etc/banner
-        cp -Rf feeds/smpackage/diy/files/* files
-        sed -i 's/v$date1/Jan/g' package/default-settings/files/zzz-default-settings
-        sed -i 's/%D %V, %C/openwrt Jan by kenzo/g' package/base-files/files/etc/banner
-        cp -f feeds/smpackage/diy/${{matrix.target}}.config .config && make defconfig
+        source /etc/environment
         make defconfig
-        make download -j$(($(nproc)+1))
+        make -j8 download
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
