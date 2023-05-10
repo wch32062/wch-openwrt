@@ -8,9 +8,15 @@
 name: Build_x86_64
 
 # Add a button to trigger the workflow
-on: 
+
+on:
   repository_dispatch:
   workflow_dispatch:
+    inputs:
+      ssh:
+        description: 'SSH connection to Actions'
+        required: false
+        default: 'true'
 
 jobs:
   build:
@@ -57,14 +63,20 @@ jobs:
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
         cd openwrt
         echo "src-git ssrp https://github.com/fw876/helloworld.git" >> ./feeds.conf.default
-        
+       
     - name: Update & Install feeds
       working-directory: ./openwrt
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
         ./scripts/feeds install -a
-
+        
+    - name: Import external feeds - vssr
+       working-directory: ./openwrt
+      run: |
+         git clone https://github.com/jerrykuku/lua-maxminddb.git
+         git clone https://github.com/jerrykuku/luci-app-vssr.git
+       
     #- name: Import external feeds - passwall
     #  working-directory: ./openwrt
     #  run: |
