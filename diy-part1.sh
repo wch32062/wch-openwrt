@@ -19,5 +19,3 @@ echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.co
 echo 'src-git UA2F https://github.com/EOYOHOO/UA2F' >>feeds.conf.default
 echo 'src-git rkpipid https://github.com/EOYOHOO/rkp-ipid' >>feeds.conf.default
 echo 'src-git campusNetwork https://github.com/FunctionXJB/Campus-network' >>feeds.conf.default
-git clone https://github.com/jerrykuku/lua-maxminddb.git
-git clone https://github.com/jerrykuku/luci-app-vssr.git
