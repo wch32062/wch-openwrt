@@ -14,10 +14,10 @@
 #sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
 
 # Add a feed source
-#sed -i '$a src-git lienol https://github.com/Lienol/openwrt-package' feeds.conf.default
-src-git kenzok8 https://github.com/kenzok8/openwrt-packages.git
-src-git haiibo https://github.com/haiibo/openwrt-packages.git
-src-git helloworld https://github.com/fw876/helloworld.git
-src-git passwall https://github.com/xiaorouji/openwrt-passwall.git
-src-git maxminddb https://github.com/jerrykuku/lua-maxminddb.git
-src-git vssr https://github.com/jerrykuku/luci-app-vssr.git  
+sed -i '$a src-git smpackage https://github.com/kenzok78/small-package' feeds.conf.default
+sed -i '$a src-git kenzok8 https://github.com/kenzok8/openwrt-packages' feeds.conf.default
+sed -i '$a src-git haiibo https://github.com/haiibo/openwrt-packages' feeds.conf.default
+sed -i '$a src-git helloworld https://github.com/fw876/helloworld' feeds.conf.default
+sed -i '$a src-git passwall https://github.com/xiaorouji/openwrt-passwall' feeds.conf.default
+sed -i '$a src-git maxminddb https://github.com/jerrykuku/lua-maxminddb' feeds.conf.default
+sed -i '$a src-git vssr https://github.com/jerrykuku/luci-app-vssr' feeds.conf.default
