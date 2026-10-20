@@ -1,0 +1,42 @@
+#
+# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+# H29K（HINLINK OPC-H29K，Rockchip RK3528，eMMC）
+# 配置见 configs/h29k.config，rootfs 默认 2 GiB ext4。
+#
+
+name: H29K
+
+on:
+  workflow_dispatch:
+    inputs:
+      ssh:
+        description: 开启 tmate 调试会话
+        type: boolean
+        required: false
+        default: false
+      upload_release:
+        description: 是否创建 GitHub Release
+        type: boolean
+        required: false
+        default: true
+
+concurrency:
+  group: build-h29k
+  cancel-in-progress: false
+
+jobs:
+  build:
+    permissions:
+      contents: write
+      actions: write
+    uses: ./.github/workflows/build-core.yml
+    with:
+      config_file: configs/h29k.config
+      device_label: H29K
+      upload_release: ${{ github.event.inputs.upload_release != 'false' }}
+      ssh: ${{ github.event.inputs.ssh == 'true' }}
+    secrets: inherit

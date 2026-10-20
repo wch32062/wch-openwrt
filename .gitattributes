@@ -1,0 +1,11 @@
+# 统一换行符，避免 Windows 下 core.autocrlf=true 把 shell 脚本写成 CRLF
+# 导致 CI 里出现 "bad interpreter: /bin/bash^M" 之类的错误
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.config text eol=lf
+.config  text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.md     text eol=lf
+LICENSE  text eol=lf
