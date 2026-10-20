@@ -14,7 +14,7 @@
 set -eu
 
 CONFIG_GENERATE=package/base-files/files/bin/config_generate
-DEFAULT_LAN_IP=192.168.100.1
+DEFAULT_LAN_IP=192.168.10.1
 
 # 修改默认 LAN IP（README 里写的也是这个地址）
 if [ -f "$CONFIG_GENERATE" ]; then

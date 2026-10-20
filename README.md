@@ -34,39 +34,93 @@
 `Update Checker` 每 18 小时检查一次 lede 的 master 提交，有更新就触发 K2 构建
 （需要先在 Settings → Secrets 里配置 `ACTIONS_TRIGGER_PAT`）。
 
-## H29K：把固件容量加大
+## H29K：容量（镜像 2 GiB，开机自动撑满 eMMC）
 
-H29K 使用 eMMC，根分区大小由配置项决定，默认 **2 GiB**：
+镜像里的 rootfs 分区固定 **2 GiB**，只决定产物文件多大：
 
 ```ini
 CONFIG_TARGET_ROOTFS_PARTSIZE=2048
 ```
 
-想装更多程序就把它改大（`4096`、`8192` …），只要不超过 eMMC 实际可用容量：
+刷进 eMMC 后，首次启动由 `files/h29k/etc/uci-defaults/99-h29k-growroot` 自动把 p2
+扩到磁盘末尾并 `resize2fs`，所以实际可用容量就是整块 eMMC（8/16/32/64 GB 都行），
+不用手工分区，也不会像上个项目那样 `/overlay` 只剩 338 MB、装 Docker 立刻爆盘。
 
-```ini
-# configs/h29k.config
-CONFIG_TARGET_ROOTFS_PARTSIZE=4096
+- 看结果：`df -h /`、`logread -e h29k-growroot`
+- 想固定大小、不自动扩：删掉 `99-h29k-growroot`，把上面改成你要的 MiB 数
+- 用的是 **ext4 可写根分区**（`CONFIG_TARGET_ROOTFS_EXT4FS=y`，关掉 squashfs），
+  `opkg install` 和 Docker 都直接落在分区里，不受 overlay 限制
+- 构建日志会打印 `rootfs 分区大小: 2048 MiB`，用来确认配置真的生效
+
+刷写：RKDevTool（Maskrom）→ boot 分区 `H29K-Boot-Loader.bin`，system 分区用
+`*-sysupgrade.img.gz` **解压出来的 `.img`**（`.gz` 不能直接刷）。
+
+K2 无法扩容：8 MB NOR 是硬件固定的，只能靠精简软件包腾空间。
+
+## H29K：5G 模块与双上游（网线优先，5G 兜底）
+
+### 驱动情况
+
+| 硬件 | 提供方式 |
+| --- | --- |
+| 网口（GMAC + RTL8211F PHY） | 内核内置（`CONFIG_STMMAC_ETH` / `CONFIG_REALTEK_PHY`），插线即可用 |
+| WiFi（AIC8800 SDIO） | `kmod-aic8800-sdio`，含固件 |
+| 屏幕（ST7789V） | `kmod-fb-tft-st7789v` |
+| 5G 模块（QMI/MBIM/AT） | **原来没有**，已在 `configs/h29k.config` 补上 |
+
+补进去的包：`kmod-usb-net-qmi-wwan`、`kmod-usb-net-cdc-mbim`、`kmod-usb-net-rndis`、
+`kmod-usb-wdm`、`kmod-usb-serial-option`、`kmod-usb-serial-qualcomm`、`kmod-usb-acm`，
+拨号工具 `uqmi`、`umbim`，LuCI 协议 `luci-proto-qmi`、`luci-proto-mbim`。
+
+### 建 wwan 接口
+
+APN 因卡而异，刷机后在 LuCI「网络 → 接口 → 添加新接口」建 `wwan`，或者直接用命令：
+
+```bash
+uci set network.wwan=interface
+uci set network.wwan.proto='qmi'
+uci set network.wwan.device='/dev/cdc-wdm0'
+uci set network.wwan.apn='ctnet'      # 按你的卡改：cmnet / 3gnet …
+uci set network.wwan.pdptype='ipv4'
+uci set network.wwan.metric='20'      # 比 wan 的 10 大，所以只有在网线不通时才用它
+uci commit network
+ifup wwan
 ```
 
-几点说明：
+MBIM 模块把 `proto` 换成 `mbim`。执行 `ls /dev/cdc-wdm*` 能看到设备，说明驱动装对了。
 
-- **为什么用 ext4 而不是 squashfs**：`CONFIG_TARGET_ROOTFS_EXT4FS=y` + 关闭 squashfs 后，
-  整个根分区可读可写，`opkg install` 装的东西直接落在分区里，不会因为 overlay 空间不足失败。
-  想换回 squashfs，就把这两行反过来写：
-  ```ini
-  CONFIG_TARGET_ROOTFS_SQUASHFS=y
-  CONFIG_TARGET_ROOTFS_EXT4FS=n
-  ```
-- **分区不能超过硬件**：`2048` 表示 2 GiB 的 rootfs 分区，镜像文件也会接近 2 GiB。
-  eMMC 只有 8 GB 时用 `4096` 仍然安全，`8192` 就要先确认容量。
-- **构建日志会回显实际值**：编译步骤会打印 `rootfs 分区大小: 2048 MiB`，Release 说明里也会写，
-  用来确认配置真的生效了（配置被 `make defconfig` 丢弃时会露出差异）。
-- **刷写方式**：RKDevTool（Maskrom）→ boot 分区选 `H29K-Boot-Loader.bin`，
-  system 分区选产物里 `*-sysupgrade.img.gz` **解压后的 `.img`**。
-  `.gz` 是压缩包，不能直接当镜像刷。
+### 双上行（网线优先，5G 兜底）
 
-K2 无法用这种方式扩容：8 MB NOR 是硬件固定的，只能靠精简软件包来腾空间。
+直接把上个项目 v3 里验证过的那套 `h29k-netmode` 搬过来了，没有另写脚本：
+
+| 文件 | 作用 |
+| --- | --- |
+| `files/h29k/usr/sbin/h29k-netmode` | 单网口双上行管理 |
+| `files/h29k/etc/init.d/h29k-netmode` | 开机自启（START=95，网络与防火墙就绪后） |
+| `files/h29k/etc/config/netmode` | 参数 |
+| `files/h29k/etc/uci-defaults/99-h29k-dualwan` | 首次开机写 Wi‑Fi（SSID `H29K-5G`）与 LAN `192.168.10.1` |
+
+```ini
+config main 'main'
+	option ethernet_enabled '1'
+	option mode 'auto'            # 有载波且拿到地址就当 WAN，否则回落 LAN
+	option wan_proto 'dhcp'       # dhcp | pppoe | static
+	option wan_metric '10'        # 有线优先
+	option cellular_enabled '1'
+	option modem_metric '30'      # 5G 兜底
+```
+
+有线的 metric 10 小于 5G 的 30：插着网线就走网线；拔掉或拿不到地址，默认路由自动落到 5G。
+5G 侧由 **qmodem** 拨号（`configs/h29k.config` 已选中 `qmodem`、`luci-app-qmodem`）。
+
+```bash
+h29k-netmode status     # 当前模式 / 载波 / 地址
+h29k-netmode auto       # 自动（默认）
+h29k-netmode wan        # 网线固定当 WAN
+h29k-netmode lan        # 网线只当 LAN
+h29k-netmode apply      # 按 /etc/config/netmode 立即应用
+logread -e netmode      # 切换日志
+```
 
 ## 目录结构
 
@@ -80,6 +134,8 @@ K2 无法用这种方式扩容：8 MB NOR 是硬件固定的，只能靠精简�
 ├── diy-part1.sh                # feeds 更新前执行：取消 helloworld 注释、追加第三方源
 ├── diy-part2.sh                # feeds 更新后执行：改默认 LAN IP
 ├── customize.sh                # 历史遗留脚本，CI 不调用
+├── files/
+│   └── h29k/                   # H29K 专属 rootfs 覆盖（h29k-netmode、扩容、Wi-Fi 默认值）
 └── .github/workflows/
     ├── build-core.yml          # 可复用构建核心（被下面四个调用）
     ├── build-openwrt.yml       # K2

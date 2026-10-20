@@ -1,0 +1,40 @@
+config main 'main'
+	# ============ 以太网(WAN 口) ============
+	# 以太网是否参与上行：1 启用，0 关闭（关闭时网线口只当 LAN）
+	option ethernet_enabled '1'
+
+	# 网线端口的角色
+	#   auto : 有载波就拿它当 WAN，拔掉/拿不到地址就回落 LAN（推荐）
+	#   wan  : 永远当 WAN（需要 Wi-Fi 作为唯一管理入口）
+	#   lan  : 原厂行为，网线只当 LAN
+	option mode 'auto'
+
+	# 有线侧取地址方式: dhcp | pppoe | static
+	option wan_proto 'dhcp'
+	# 有线的默认路由 metric（越小越优先）
+	option wan_metric '10'
+	# auto 模式下，网线有载波但这么久（秒）拿不到 IPv4，就回落 LAN
+	option auto_lease_timeout '25'
+	# 有线口设备名，留空自动探测（/sys/class/net/eth*）
+	option wan_device ''
+
+	# wan_proto=pppoe 时填写
+	option wan_username ''
+	option wan_password ''
+	# wan_proto=static 时填写
+	option wan_ipaddr ''
+	option wan_netmask '255.255.255.0'
+	option wan_gateway ''
+
+	# ============ 蜂窝(5G/4G 模组) ============
+	# 蜂窝是否参与上行：1 启用（qmodem 拨号），0 关闭
+	option cellular_enabled '1'
+	# 蜂窝接口的默认路由 metric（比以太网大 => 有线优先、蜂窝兜底）
+	option modem_metric '30'
+
+	# ============ Wi-Fi（管理入口） ============
+	# 首次启动时写入 Wi-Fi 的 SSID / 密码，之后以 LuCI 里的设置为准
+	option wifi_ssid 'H29K-5G'
+	option wifi_key 'wchzyy520'
+	# WPA2；想让新设备用 WPA3 可改成 sae-mixed
+	option wifi_encryption 'psk2'

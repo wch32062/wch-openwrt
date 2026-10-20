@@ -36,3 +36,5 @@ add_feed() {
 
 add_feed lienol 'https://github.com/Lienol/openwrt-package;main'
 add_feed haiibo 'https://github.com/haiibo/openwrt-packages;master'
+# QModem：5G/4G 模组管理与拨号（qmodem、luci-app-qmodem 及驱动都在这个 feed 里）
+add_feed qmodem 'https://github.com/FUjr/QModem;main'
