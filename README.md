@@ -34,23 +34,20 @@
 `Update Checker` 每 18 小时检查一次 lede 的 master 提交，有更新就触发 K2 构建
 （需要先在 Settings → Secrets 里配置 `ACTIONS_TRIGGER_PAT`）。
 
-## H29K：容量（镜像 2 GiB，开机自动撑满 eMMC）
-
-镜像里的 rootfs 分区固定 **2 GiB**，只决定产物文件多大：
+## H29K：容量（rootfs 分区 4 GiB）
 
 ```ini
-CONFIG_TARGET_ROOTFS_PARTSIZE=2048
+CONFIG_TARGET_ROOTFS_PARTSIZE=4096
+CONFIG_TARGET_ROOTFS_SQUASHFS=y
 ```
 
-刷进 eMMC 后，首次启动由 `files/h29k/etc/uci-defaults/99-h29k-growroot` 自动把 p2
-扩到磁盘末尾并 `resize2fs`，所以实际可用容量就是整块 eMMC（8/16/32/64 GB 都行），
-不用手工分区，也不会像上个项目那样 `/overlay` 只剩 338 MB、装 Docker 立刻爆盘。
+取 4096 MiB 是为了和已经验证过的 v5/v6 保持一致：分区表里 p2 是 4 GiB，
+rootfs 用 squashfs，首次开机 fstools 会自动在剩余空间上建 overlay，`df -h /overlay` 约 **3.9 G**。
 
-- 看结果：`df -h /`、`logread -e h29k-growroot`
-- 想固定大小、不自动扩：删掉 `99-h29k-growroot`，把上面改成你要的 MiB 数
-- 用的是 **ext4 可写根分区**（`CONFIG_TARGET_ROOTFS_EXT4FS=y`，关掉 squashfs），
-  `opkg install` 和 Docker 都直接落在分区里，不受 overlay 限制
-- 构建日志会打印 `rootfs 分区大小: 2048 MiB`，用来确认配置真的生效
+- 镜像文件本身不大：`.img.gz` 约 30 MB，解压后约 4.1 GB（大部分是零填充）
+- eMMC 是 8 GB 的机器也用 4096，别超过实际容量
+- 想改大小：改这个数字重编即可（`2048` 省空间，`8192` 需要 eMMC ≥ 8 GB 且会更慢）
+- 构建日志会打印 `rootfs 分区大小: 4096 MiB`，用来确认配置真的生效
 
 刷写：RKDevTool（Maskrom）→ boot 分区 `H29K-Boot-Loader.bin`，system 分区用
 `*-sysupgrade.img.gz` **解压出来的 `.img`**（`.gz` 不能直接刷）。
@@ -138,7 +135,7 @@ logread -e netmode      # 切换日志
 ├── diy-part2.sh                # feeds 更新后执行：改默认 LAN IP
 ├── customize.sh                # 历史遗留脚本，CI 不调用
 ├── files/
-│   └── h29k/                   # H29K 专属 rootfs 覆盖（h29k-netmode、扩容、Wi-Fi 默认值）
+│   └── h29k/                   # H29K 专属 rootfs 覆盖（h29k-netmode、Wi-Fi 默认值、SIM 检测）
 └── .github/workflows/
     ├── build-core.yml          # 可复用构建核心（被下面四个调用）
     ├── build-openwrt.yml       # K2
