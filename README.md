@@ -72,6 +72,9 @@ K2 无法扩容：8 MB NOR 是硬件固定的，只能靠精简软件包腾空�
 `kmod-usb-wdm`、`kmod-usb-serial-option`、`kmod-usb-serial-qualcomm`、`kmod-usb-acm`，
 拨号工具 `uqmi`、`umbim`，LuCI 协议 `luci-proto-qmi`、`luci-proto-mbim`。
 
+模组是 **Quectel RM500U / RM520N** 的话，还额外装了 qmodem feed 里的
+`kmod-qmi-wwan-q`（QMAP 必须用它，内核自带 `qmi_wwan` 不认）和 `kmod-pcie-mhi`（PCIe 形态）。
+
 ### 建 wwan 接口
 
 APN 因卡而异，刷机后在 LuCI「网络 → 接口 → 添加新接口」建 `wwan`，或者直接用命令：
