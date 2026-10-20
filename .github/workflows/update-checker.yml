@@ -8,17 +8,21 @@
 # File: .github/workflows/update-checker.yml
 # Description: Source code update checker
 #
+# 需要仓库 Secrets 里配置 ACTIONS_TRIGGER_PAT（细粒度 token，
+# 对 wch32062/wch-openwrt 至少拥有 Contents: Read 与 Actions/Metadata 读取权限，
+# 用于发送 repository_dispatch）。
+#
 
 name: Update Checker
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */18 * * *'
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
-
-on:
-  workflow_dispatch:
-#  schedule:
-#    - cron: 0 */18 * * *
 
 jobs:
   check:
@@ -29,12 +33,12 @@ jobs:
     - name: Get Commit Hash
       id: getHash
       run: |
-        git clone --depth 1 $REPO_URL -b $REPO_BRANCH .
-        echo "::set-output name=commitHash::$(git rev-parse HEAD)"
+        git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" .
+        echo "commitHash=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
     - name: Compare Commit Hash
       id: cacheHash
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: .commitHash
         key: HEAD-${{ steps.getHash.outputs.commitHash }}
@@ -42,17 +46,19 @@ jobs:
     - name: Save New Commit Hash
       if: steps.cacheHash.outputs.cache-hit != 'true'
       run: |
-        echo ${{ steps.getHash.outputs.commitHash }} | tee .commitHash
+        echo "${{ steps.getHash.outputs.commitHash }}" | tee .commitHash
 
     - name: Trigger build
       if: steps.cacheHash.outputs.cache-hit != 'true'
-      uses: peter-evans/repository-dispatch@v1
+      uses: peter-evans/repository-dispatch@v4
       with:
         token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
-        event-type: Source Code Update
+        event-type: source-update
 
     - name: Delete workflow runs
-      uses: GitRML/delete-workflow-runs@main
+      uses: Mattraks/delete-workflow-runs@v2
       with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        repository: ${{ github.repository }}
         retain_days: 1
         keep_minimum_runs: 1
