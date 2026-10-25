@@ -1,0 +1,219 @@
+#
+# H29K 固件构建（ImmortalWrt 体系）
+#
+# 为什么不用 coolsnowwolf/lede：qmodem 依赖 kmod-mhi-wwan / quectel-CM-5G，
+# 这两个包 lede 里没有，defconfig 会把 qmodem 直接丢掉 → 编译出来的镜像没有 5G 拨号。
+# ImmortalWrt 的 feeds 里有这两个包，qmodem 可以正常选中。
+#
+# 但官方 ImmortalWrt 没有 hinlink/h29k 的板级支持，所以这里在构建时：
+#   1. 拉 ouyangzq/H29KorH69K-OPENWRT 这个社区 BSP
+#   2. 把它提供的补丁/驱动包应用到 ImmortalWrt 源码
+#   3. 追加设备定义（BSP 自带的那份 patch 用 fuzz 应用时会插错位置，这里改成干净追加）
+#
+# 本机验证记录见 README「H29K：从源码构建 Journey」。
+#
+
+name: H29K (ImmortalWrt)
+
+on:
+  workflow_dispatch:
+    inputs:
+      rootfs_mb:
+        description: 'rootfs 分区大小（MiB）'
+        type: string
+        required: false
+        default: '2048'
+      upload_release:
+        description: '是否创建 GitHub Release'
+        type: boolean
+        required: false
+        default: true
+      ssh:
+        description: '开启 tmate 调试会话'
+        type: boolean
+        required: false
+        default: false
+
+env:
+  IMWRT_URL: https://github.com/immortalwrt/immortalwrt
+  IMWRT_BRANCH: master
+  BSP_URL: https://github.com/ouyangzq/H29KorH69K-OPENWRT
+  BSP_REF: main
+  KERNEL_DIR: target/linux/rockchip/patches-6.18
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    name: Build H29K (ImmortalWrt)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    permissions:
+      contents: write
+      actions: write
+
+    env:
+      ROOTFS_MB: ${{ github.event.inputs.rootfs_mb || '2048' }}
+      UPLOAD_RELEASE: ${{ github.event.inputs.upload_release != 'false' }}
+      DEVICE_LABEL: H29K
+      CONFIG_FILE: configs/h29k-imwrt.config
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/share/swift
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install -y --no-install-recommends \
+          ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache cmake cpio curl device-tree-compiler fastjar file flex gawk gettext \
+          genisoimage git gperf haveged help2man intltool libelf-dev libglib2.0-dev \
+          libgmp-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libreadline-dev \
+          libssl-dev libtool lrzsz msmtp nano ninja-build p7zip-full patch pkgconf python3 \
+          python3-pyelftools libpython3-dev qemu-utils rsync scons squashfs-tools subversion \
+          swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        sudo timedatectl set-timezone "$TZ"
+        df -hT /
+
+    - name: Clone ImmortalWrt and BSP
+      run: |
+        git clone --depth 1 -b "$IMWRT_BRANCH" "$IMWRT_URL" imwrt
+        git clone --depth 1 -b "$BSP_REF" "$BSP_URL" bsp
+        du -sh imwrt bsp
+
+    - name: Apply BSP patches
+      run: |
+        set -e
+        cd imwrt
+
+        # 1) 改上游 OpenWrt 自身文件（能干净应用的用 git apply）
+        git apply ../bsp/openwrt-patches/patches/001-kmod-fbdev-allow-rockchip.patch
+        git apply ../bsp/openwrt-patches/patches/003-rockchip-kernel-config.patch
+
+        # 2) 其余补丁上游有漂移，用 fuzz 应用
+        patch -p1 -F3 < ../bsp/openwrt-patches/patches/002-uboot-add-generic-rk35xx.patch
+        patch -p1 -F3 < ../bsp/dts/patches/002-rockchip-armv8-02network-hinlink-devices.patch
+        # 注意：不要应用 dts/patches/001-armv8-hinlink-devices.patch
+        # 它会把 Device/hinlink_opc-h29k 插进 friendlyarm_nanopi-r2s 的 define 里，
+        # 导致设备索引不到、还破坏 nanopi-r2s。设备定义见下一步。
+
+        # 3) 内核补丁
+        mkdir -p "$KERNEL_DIR"
+        cp ../bsp/dts/kernel-patches/*.patch "$KERNEL_DIR"/
+        for f in ../bsp/dts/kernel-patches-disabled/*.patch; do
+          rm -f "$KERNEL_DIR/$(basename "$f")"
+        done
+
+        # 4) BSP 功能包（WiFi/屏幕/触摸/风扇/主题等）
+        for d in aic8800 aic8800-loader hinlink-settings kmod-fb-tft-gc9307 \
+                 kmod-input-touchscreen-axs5106 kmod-saradc-rockchip luci-app-fan-h69k \
+                 luci-app-oled luci-proto-modem-pro luci-theme-daocaoren modem-pro \
+                 modemband tft-display; do
+          rm -rf "package/$d"
+          cp -a "../bsp/$d" "package/"
+        done
+
+    - name: Add device definition
+      run: |
+        # BSP 的 001-armv8-hinlink-devices.patch 用 fuzz 应用会把设备定义插错位置，
+        # 导致设备索引不到。这里用仓库里这份干净的片段直接追加。
+        cat board/h29k/device-h29k.mk >> imwrt/target/linux/rockchip/image/armv8.mk
+        tail -20 imwrt/target/linux/rockchip/image/armv8.mk
+
+    - name: Setup feeds
+      run: |
+        cd imwrt
+        grep -q '^src-git qmodem' feeds.conf.default || \
+          echo 'src-git qmodem https://github.com/FUjr/QModem;main' >> feeds.conf.default
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Load configuration
+      run: |
+        cd imwrt
+        if [ ! -f "../$CONFIG_FILE" ]; then
+          echo "缺少配置种子 $CONFIG_FILE" >&2
+          exit 1
+        fi
+        cp "../$CONFIG_FILE" .config
+        # 分区大小按输入覆盖
+        sed -i "s/^CONFIG_TARGET_ROOTFS_PARTSIZE=.*/CONFIG_TARGET_ROOTFS_PARTSIZE=${ROOTFS_MB}/" .config
+        make defconfig
+
+        echo "=== 生效的配置 ==="
+        grep -E '^CONFIG_TARGET_PROFILE|^CONFIG_TARGET_ROOTFS_(PARTSIZE|SQUASHFS)|^CONFIG_PACKAGE_(qmodem|luci-app-qmodem|luci-app-openclash)=' .config
+
+    - name: SSH connection to Actions
+      uses: mxschmitt/action-tmate@v3
+      if: inputs.ssh
+      with:
+        limit-access-to-actor: false
+
+    - name: Download package
+      run: |
+        cd imwrt
+        make -j8 download
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+
+    - name: Compile the firmware
+      id: compile
+      run: |
+        cd imwrt
+        make -j"$(nproc)" || make -j1 V=s
+        echo "status=success" >> "$GITHUB_OUTPUT"
+        echo "DEVICE_NAME=_hinlink_opc-h29k" >> "$GITHUB_ENV"
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> "$GITHUB_ENV"
+
+    - name: Organize files
+      id: organize
+      run: |
+        cd imwrt/bin/targets/*/*
+        rm -rf packages
+        echo "FIRMWARE=$PWD" >> "$GITHUB_ENV"
+        echo "status=success" >> "$GITHUB_OUTPUT"
+        ls -lh
+
+    - name: Upload firmware directory
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: ImmortalWrt_H29K${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
+        if-no-files-found: warn
+
+    - name: Generate release tag
+      id: tag
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      run: |
+        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> "$GITHUB_OUTPUT"
+        {
+          echo "设备：H29K（HINLINK OPC-H29K / RK3528）"
+          echo ""
+          echo "源码：ImmortalWrt ${IMWRT_BRANCH} + H29K BSP"
+          echo "rootfs 分区：${ROOTFS_MB} MiB（squashfs + overlay）"
+          echo "构建时间：$(date -u +'%Y-%m-%d %H:%M UTC')"
+        } > release.txt
+        echo "status=success" >> "$GITHUB_OUTPUT"
+
+    - name: Upload firmware to release
+      uses: softprops/action-gh-release@v2
+      if: steps.tag.outputs.status == 'success' && !cancelled()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
+        files: ${{ env.FIRMWARE }}/*
+
+    - name: Delete workflow runs
+      uses: Mattraks/delete-workflow-runs@v2
+      if: (!cancelled())
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        repository: ${{ github.repository }}
+        retain_days: 1
+        keep_minimum_runs: 3
