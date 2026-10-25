@@ -1,198 +1,93 @@
 # wch-openwrt
 
-基于 [coolsnowwolf/lede](https://github.com/coolsnowwolf/lede)（master 分支）的 OpenWrt 固件自动构建仓库，
-用 GitHub Actions 完成「拉源码 → 装 feeds → 套配置 → 编译 → 打包 → 发 Release」全流程。
+HINLINK OPC-H29K（Rockchip RK3528）的 OpenWrt 固件自动构建仓库。
+
+架构：**ImmortalWrt 源码 + 社区 BSP 补丁 + qmodem**，由 GitHub Actions 完成
+「拉源码 → 打板级补丁 → 装 feeds → 套配置 → 编译 → 打包 → 发 Release」。
+
+> 为什么不直接用 coolsnowwolf/lede：qmodem 依赖 `kmod-mhi-wwan`、`quectel-CM-5G`，
+> 这两个包在 lede 里不存在，`make defconfig` 会把 qmodem 丢掉，编出来的镜像没有 5G 拨号。
+> ImmortalWrt 的 feeds 里有这两个包，所以改走 ImmortalWrt。
 
 ## 支持设备
 
-| 设备 | 工作流 | 配置文件 | 平台 |
+| 设备 | 工作流 | 配置文件 | 说明 |
 | --- | --- | --- | --- |
-| 斐讯 K2 | `Build OpenWrt` | `.config` | ramips / mt7620（8 MB NOR + 64 MB RAM） |
-| HINLINK OPC-H29K | `H29K` | `configs/h29k.config` | rockchip / armv8，RK3528，eMMC |
-| FriendlyARM NanoPi R2S | `R2S` | `configs/r2s.config` | rockchip / armv8，RK3328，microSD |
-| FriendlyARM NanoPi R4S | `R4S` | `configs/r4s.config` | rockchip / armv8，RK3399，microSD/eMMC |
+| HINLINK OPC-H29K | `H29K (ImmortalWrt)` | `configs/h29k-imwrt.config` | RK3528，eMMC，1.14" ST7789V 小屏 |
+| 斐讯 K2（可选） | `Build OpenWrt` | `.config` | ramips/mt7620，8 MB NOR |
+
+K2 那条线是仓库早期留下的，继续用 lede 源码；不再需要可以把 `build-openwrt.yml`、
+`build-core.yml` 和 `.config` 一起删掉。
 
 ## 默认登录
 
-- 地址：**http://192.168.100.1**
-- 密码：**password**（首次登录请立即修改）
+- 地址：**http://192.168.10.1**
+- 密码：**password**
+- Wi‑Fi：`H29K-5G` / `wchzyy520`（首次开机由 `99-h29k-dualwan` 写入）
 
-> 默认 LAN 网段由 `diy-part2.sh` 统一改为 `192.168.100.0/24`，所有设备一致。
+默认 LAN 由 `diy-part2.sh` 统一改成 `192.168.10.0/24`。
 
 ## 如何构建
 
-1. 进入仓库 **Actions** 页；
-2. 左侧选对应工作流（如 `H29K`）；
-3. 点 **Run workflow**；
-4. 需要时勾选 `ssh`，会通过 tmate 打开一个调试会话，方便进容器里手工排查。
+1. Actions → 左侧 **`H29K (ImmortalWrt)`**
+2. 右上 **Run workflow**
+3. `rootfs_mb` 保持 `2048`（想要 4G 就填 4096）
+4. 绿色按钮
 
-构建产物：
+产物在运行的 **Artifacts**，同时会发一个 **Release**。
+刷机用 `*-squashfs-sysupgrade.img.gz` 解压出的 `.img`。
 
-- **Artifacts**：`OpenWrt_<设备>_<型号>_<时间>`，保留期由仓库设置决定；
-- **Release**：K2 / H29K / R4S 会发布 Release，自动保留最近 3 个，更早的连同 tag 一起清理。
+## H29K 关键组成
 
-`Update Checker` 每 18 小时检查一次 lede 的 master 提交，有更新就触发 K2 构建
-（需要先在 Settings → Secrets 里配置 `ACTIONS_TRIGGER_PAT`）。
-
-## H29K：容量（rootfs 分区 4 GiB）
-
-```ini
-CONFIG_TARGET_ROOTFS_PARTSIZE=4096
-CONFIG_TARGET_ROOTFS_SQUASHFS=y
-```
-
-取 4096 MiB 是为了和已经验证过的 v5/v6 保持一致：分区表里 p2 是 4 GiB，
-rootfs 用 squashfs，首次开机 fstools 会自动在剩余空间上建 overlay，`df -h /overlay` 约 **3.9 G**。
-
-- 镜像文件本身不大：`.img.gz` 约 30 MB，解压后约 4.1 GB（大部分是零填充）
-- eMMC 是 8 GB 的机器也用 4096，别超过实际容量
-- 想改大小：改这个数字重编即可（`2048` 省空间，`8192` 需要 eMMC ≥ 8 GB 且会更慢）
-- 构建日志会打印 `rootfs 分区大小: 4096 MiB`，用来确认配置真的生效
-
-刷写：RKDevTool（Maskrom）→ boot 分区 `H29K-Boot-Loader.bin`，system 分区用
-`*-sysupgrade.img.gz` **解压出来的 `.img`**（`.gz` 不能直接刷）。
-
-K2 无法扩容：8 MB NOR 是硬件固定的，只能靠精简软件包腾空间。
-
-## H29K：5G 模块与双上游（网线优先，5G 兜底）
-
-### 驱动情况
-
-| 硬件 | 提供方式 |
+| 需求 | 实现 |
 | --- | --- |
-| 网口（GMAC + RTL8211F PHY） | 内核内置（`CONFIG_STMMAC_ETH` / `CONFIG_REALTEK_PHY`），插线即可用 |
-| WiFi（AIC8800 SDIO） | `kmod-aic8800-sdio`，含固件 |
-| 屏幕（ST7789V） | `kmod-fb-tft-st7789v` |
-| 5G 模块（QMI/MBIM/AT） | **原来没有**，已在 `configs/h29k.config` 补上 |
+| 5G 拨号 | `qmodem` + `luci-app-qmodem` + `kmod-qmi-wwan-q`（Quectel RM500U/RM520N） |
+| 网线优先、5G 兜底 | `h29k-netmode`（有线 metric 10，蜂窝 metric 30） |
+| 无线发信号 | `aic8800` SDIO 驱动 + 固件，`wpad-openssl` |
+| 小屏 | `sitronix,st7789v` 135×240 @6MHz，`kmod-fb-tft-st7789v` |
+| 容量 | rootfs 分区 2 GiB（squashfs + overlay，可用约 1.9 GiB） |
 
-补进去的包：`kmod-usb-net-qmi-wwan`、`kmod-usb-net-cdc-mbim`、`kmod-usb-net-rndis`、
-`kmod-usb-wdm`、`kmod-usb-serial-option`、`kmod-usb-serial-qualcomm`、`kmod-usb-acm`，
-拨号工具 `uqmi`、`umbim`，LuCI 协议 `luci-proto-qmi`、`luci-proto-mbim`。
-
-模组是 **Quectel RM500U / RM520N** 的话，还额外装了 qmodem feed 里的
-`kmod-qmi-wwan-q`（QMAP 必须用它，内核自带 `qmi_wwan` 不认）和 `kmod-pcie-mhi`（PCIe 形态）。
-
-### 建 wwan 接口
-
-APN 因卡而异，刷机后在 LuCI「网络 → 接口 → 添加新接口」建 `wwan`，或者直接用命令：
-
-```bash
-uci set network.wwan=interface
-uci set network.wwan.proto='qmi'
-uci set network.wwan.device='/dev/cdc-wdm0'
-uci set network.wwan.apn='ctnet'      # 按你的卡改：cmnet / 3gnet …
-uci set network.wwan.pdptype='ipv4'
-uci set network.wwan.metric='20'      # 比 wan 的 10 大，所以只有在网线不通时才用它
-uci commit network
-ifup wwan
-```
-
-MBIM 模块把 `proto` 换成 `mbim`。执行 `ls /dev/cdc-wdm*` 能看到设备，说明驱动装对了。
-
-### 双上行（网线优先，5G 兜底）
-
-直接把上个项目 v3 里验证过的那套 `h29k-netmode` 搬过来了，没有另写脚本：
-
-| 文件 | 作用 |
-| --- | --- |
-| `files/h29k/usr/sbin/h29k-netmode` | 单网口双上行管理 |
-| `files/h29k/etc/init.d/h29k-netmode` | 开机自启（START=95，网络与防火墙就绪后） |
-| `files/h29k/etc/config/netmode` | 参数 |
-| `files/h29k/etc/uci-defaults/99-h29k-dualwan` | 首次开机写 Wi‑Fi（SSID `H29K-5G`）与 LAN `192.168.10.1` |
-
-```ini
-config main 'main'
-	option ethernet_enabled '1'
-	option mode 'auto'            # 有载波且拿到地址就当 WAN，否则回落 LAN
-	option wan_proto 'dhcp'       # dhcp | pppoe | static
-	option wan_metric '10'        # 有线优先
-	option cellular_enabled '1'
-	option modem_metric '30'      # 5G 兜底
-```
-
-有线的 metric 10 小于 5G 的 30：插着网线就走网线；拔掉或拿不到地址，默认路由自动落到 5G。
-5G 侧由 **qmodem** 拨号（`configs/h29k.config` 已选中 `qmodem`、`luci-app-qmodem`）。
-
-```bash
-h29k-netmode status     # 当前模式 / 载波 / 地址
-h29k-netmode auto       # 自动（默认）
-h29k-netmode wan        # 网线固定当 WAN
-h29k-netmode lan        # 网线只当 LAN
-h29k-netmode apply      # 按 /etc/config/netmode 立即应用
-logread -e netmode      # 切换日志
-```
+板级支持来自 [ouyangzq/H29KorH69K-OPENWRT](https://github.com/ouyangzq/H29KorH69K-OPENWRT)。
+注意它自带的几个补丁用 `patch -F3` 应用时会**插错位置**（设备定义、u-boot 列表、
+`U-Boot/rk3568/Default` define 嵌套），仓库里的流水线已修正，见
+`.github/workflows/H29K-imwrt.yml` 里的注释。
 
 ## 目录结构
 
 ```
 .
-├── .config                     # 斐讯 K2 的完整配置
+├── .github/workflows/
+│   ├── H29K-imwrt.yml      # H29K 主流水线（ImmortalWrt + BSP）
+│   ├── build-openwrt.yml   # K2（可选）
+│   ├── build-core.yml      # K2 的公共核心（可选）
+│   └── update-checker.yml  # 源码更新检查（定时已停用）
+├── board/h29k/
+│   ├── device-h29k.mk                  # 设备定义（避开 BSP 补丁的插入错误）
+│   ├── 104-h29k-panel-st7789v.patch    # 小屏面板参数
+│   └── video-st7789v.mk                # 补 video.mk 缺的 kmod 包
 ├── configs/
-│   ├── h29k.config             # H29K 种子配置（含 rootfs 容量）
-│   ├── r2s.config              # NanoPi R2S 种子配置
-│   └── r4s.config              # NanoPi R4S 种子配置
-├── diy-part1.sh                # feeds 更新前执行：取消 helloworld 注释、追加第三方源
-├── diy-part2.sh                # feeds 更新后执行：改默认 LAN IP
-├── customize.sh                # 历史遗留脚本，CI 不调用
-├── files/
-│   └── h29k/                   # H29K 专属 rootfs 覆盖（h29k-netmode、Wi-Fi 默认值、SIM 检测）
-└── .github/workflows/
-    ├── build-core.yml          # 可复用构建核心（被下面四个调用）
-    ├── build-openwrt.yml       # K2
-    ├── H29K.yml
-    ├── R2S.yml
-    ├── R4S.yml
-    └── update-checker.yml      # lede 源码更新检查
+│   ├── h29k-imwrt.config   # H29K 种子配置（2G + qmodem + 小屏）
+│   └── h29k.config         # lede 版旧配置（已不用，保留参考）
+├── diy-part1.sh            # feeds 前：加第三方源（含 qmodem）
+├── diy-part2.sh            # feeds 后：改默认 LAN
+└── .config                 # K2 配置（可选）
 ```
 
-`configs/*.config` 都是**种子配置**：只写目标平台、设备、容量和要装的软件包，
-构建时由 `make defconfig` 补全成完整 `.config`。这样几百 KB 的完整配置不用四个各存一份。
+## 已知限制
 
-## 常用自定义
-
-| 想改什么 | 改哪里 |
-| --- | --- |
-| 默认 LAN IP | `diy-part2.sh` 里的 `DEFAULT_LAN_IP` |
-| 固件容量 | 对应 `configs/*.config` 的 `CONFIG_TARGET_ROOTFS_PARTSIZE` |
-| 加软件包 | 对应配置里加 `CONFIG_PACKAGE_xxx=y` |
-| 换 lede 分支 | `build-core.yml` 里的 `REPO_BRANCH` |
-| 加第三方 feed | `diy-part1.sh` 里 `add_feed 名字 '仓库地址;分支'` |
-
-## 本地编译
-
-```bash
-sudo apt update -y
-sudo apt full-upgrade -y
-sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-  bzip2 ccache cmake cpio curl device-tree-compiler fastjar file flex gawk gettext genisoimage git \
-  gperf haveged help2man intltool libelf-dev libglib2.0-dev libgmp-dev libltdl-dev libmpc-dev \
-  libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz msmtp nano \
-  ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools libpython3-dev qemu-utils \
-  rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-
-git clone --depth 1 -b master https://github.com/coolsnowwolf/lede openwrt
-cd openwrt
-cp ../wch-openwrt/configs/h29k.config .config
-../wch-openwrt/diy-part1.sh            # 在 openwrt/ 目录里执行
-./scripts/feeds update -a
-./scripts/feeds install -a
-../wch-openwrt/diy-part2.sh
-make defconfig
-make -j$(nproc) download
-make -j$(nproc) V=s
-```
-
-注意：
-
-- **不要用 root 用户编译**；
-- 国内网络建议先准备代理，`feeds update` 和大文件下载对网络比较敏感；
-- 二次编译建议 `rm -rf ./tmp && make defconfig` 后再编。
+- GitHub 上编出的镜像**尚未实机验证**是否点亮；本机（同版本 ImmortalWrt + BSP）已编通，
+  产物 27 MB（squashfs），276 个包。
+- 小屏按 **1.14 寸 ST7789V** 配置（依据原厂 dtb 反编译：135×240 / 6MHz / 背光 gpio0 PA0）。
+  若是 1.47 寸 GC9307 那版，去掉 `board/h29k/104-h29k-panel-st7789v.patch`，
+  改用 BSP 默认 dts（172×320 / 15MHz / PA1）。
+- `Update Checker` 需要 `ACTIONS_TRIGGER_PAT` secret 才能自动触发，未配置时只能手动运行。
 
 ## 致谢
 
+- [ImmortalWrt](https://github.com/immortalwrt/immortalwrt)
+- [ouyangzq/H29KorH69K-OPENWRT](https://github.com/ouyangzq/H29KorH69K-OPENWRT)（H29K BSP）
+- [FUjr/QModem](https://github.com/FUjr/QModem)（5G 模组管理）
 - [coolsnowwolf/lede](https://github.com/coolsnowwolf/lede)
-- [Lienol/openwrt-package](https://github.com/Lienol/openwrt-package)
-- [P3TERX/Actions-OpenWrt](https://github.com/P3TERX/Actions-OpenWrt)
 
 ## License
 
