@@ -75,11 +75,12 @@ K2 那条线是仓库早期留下的，继续用 lede 源码；不再需要可�
 
 ## 已知限制
 
-- GitHub 上编出的镜像**尚未实机验证**是否点亮；本机（同版本 ImmortalWrt + BSP）已编通，
-  产物 27 MB（squashfs），276 个包。
+- **尚未实机验证**。GitHub 这条流水线已修掉三处问题（BSP 补丁路径、Release 门控、files/h29k 覆盖层），
+  但还没跑出过完整镜像；本机同版本已编通（27 MB squashfs，276 包），正在补上双上行覆盖层后重编。
 - 小屏按 **1.14 寸 ST7789V** 配置（依据原厂 dtb 反编译：135×240 / 6MHz / 背光 gpio0 PA0）。
   若是 1.47 寸 GC9307 那版，去掉 `board/h29k/104-h29k-panel-st7789v.patch`，
   改用 BSP 默认 dts（172×320 / 15MHz / PA1）。
+  分辨方法：量屏幕发光区宽度（约 2.4 cm = 1.14 寸，约 3.0 cm = 1.47 寸），或看板子丝印（V1.3 / V5）。
 - `Update Checker` 需要 `ACTIONS_TRIGGER_PAT` secret 才能自动触发，未配置时只能手动运行。
 
 ## 致谢
