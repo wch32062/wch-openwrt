@@ -122,14 +122,8 @@ jobs:
           cp -a "../bsp/$d" "package/"
         done
 
-        # 4) BSP 功能包（WiFi/屏幕/触摸/风扇/主题等）
-        for d in aic8800 aic8800-loader hinlink-settings kmod-fb-tft-gc9307 \
-                 kmod-input-touchscreen-axs5106 kmod-saradc-rockchip luci-app-fan-h69k \
-                 luci-app-oled luci-proto-modem-pro luci-theme-daocaoren modem-pro \
-                 modemband tft-display; do
-          rm -rf "package/$d"
-          cp -a "../bsp/$d" "package/"
-        done
+        # 5) 仓库自带的包：st7789v 的 fbtft kmod（这棵树只打包了 gc9307/ili9486）
+        cp -a ../board/h29k/packages/* package/
 
     - name: Add device definition
       run: |
