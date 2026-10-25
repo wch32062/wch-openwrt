@@ -142,6 +142,18 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
+    - name: Copy files overlay
+      run: |
+        # 仓库 files/h29k 是 rootfs 覆盖层：h29k-netmode（双上行）、Wi-Fi 默认值、
+        # SIM 热插拔、LuCI 上行页。少了它镜像里就没有双上行脚本，LAN 也会停在
+        # ImmortalWrt 默认的 192.168.1.1。
+        mkdir -p imwrt/files
+        cp -a files/h29k/. imwrt/files/
+        chmod 755 imwrt/files/etc/init.d/h29k-netmode \
+                  imwrt/files/usr/sbin/h29k-netmode \
+                  imwrt/files/etc/uci-defaults/99-h29k-dualwan \
+                  imwrt/files/etc/hotplug.d/usb/30-quectel-simdet
+        find imwrt/files -type f
     - name: Load configuration
       run: |
         cd imwrt
