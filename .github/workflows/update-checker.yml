@@ -17,8 +17,11 @@ name: Update Checker
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 */18 * * *'
+  # 定时检查已停用：需要先配好 ACTIONS_TRIGGER_PAT secret，
+  # 否则每天都会因为拿不到 token 而报红（之前 #6~#10 就是这原因）。
+  # 配好之后取消下面两行注释即可。
+  # schedule:
+  #   - cron: '0 */18 * * *'
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
@@ -27,6 +30,8 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      PAT: ${{ secrets.ACTIONS_TRIGGER_PAT }}
 
     steps:
 
@@ -49,7 +54,7 @@ jobs:
         echo "${{ steps.getHash.outputs.commitHash }}" | tee .commitHash
 
     - name: Trigger build
-      if: steps.cacheHash.outputs.cache-hit != 'true'
+      if: env.PAT != '' && steps.cacheHash.outputs.cache-hit != 'true'
       uses: peter-evans/repository-dispatch@v4
       with:
         token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
