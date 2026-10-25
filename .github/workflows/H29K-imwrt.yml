@@ -122,8 +122,10 @@ jobs:
           cp -a "../bsp/$d" "package/"
         done
 
-        # 5) 仓库自带的包：st7789v 的 fbtft kmod（这棵树只打包了 gc9307/ili9486）
-        cp -a ../board/h29k/packages/* package/
+        # 5) 仓库自带：st7789v 的 fbtft kmod 定义，追加进 video.mk
+        #    （这类内核模块包不能单独放 package/，否则缺内核构建上下文会报 No targets specified）
+        grep -q 'KernelPackage/fb-tft-st7789v' package/kernel/linux/modules/video.mk || \
+          cat ../board/h29k/video-st7789v.mk >> package/kernel/linux/modules/video.mk
 
     - name: Add device definition
       run: |
