@@ -109,6 +109,9 @@ jobs:
         mkdir -p "$KERNEL_DIR"
         cp ../bsp/dts/kernel-patches/102-arm64-dts-rockchip-add-HINLINK-OPC-H29K.patch "$KERNEL_DIR"/
         cp ../bsp/dts/kernel-patches/107-mmc-core-set-initial-signal-voltage-on-power-off.patch "$KERNEL_DIR"/
+        # 104：把面板节点换成 1.14 寸 ST7789V（135x240 / 6MHz / 背光 gpio0 PA0）。
+        # BSP 默认 dts 是 1.47 寸 GC9307（172x320 / 15MHz / PA1），小屏机器用错就不亮。
+        cp board/h29k/104-h29k-panel-st7789v.patch "$KERNEL_DIR"/
 
         # 4) BSP 功能包（WiFi/屏幕/触摸/风扇/主题等）
         for d in aic8800 aic8800-loader hinlink-settings kmod-fb-tft-gc9307 \
