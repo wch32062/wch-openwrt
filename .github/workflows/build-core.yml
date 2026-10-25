@@ -22,6 +22,11 @@ on:
         description: 产物标签，例如 H29K
         type: string
         required: true
+      files_dir:
+        description: 设备专属 rootfs 覆盖目录（放在 openwrt/files 下）
+        type: string
+        required: false
+        default: files
       upload_release:
         description: 是否创建 GitHub Release
         type: boolean
@@ -50,6 +55,7 @@ jobs:
     env:
       CONFIG_FILE: ${{ inputs.config_file }}
       DEVICE_LABEL: ${{ inputs.device_label }}
+      FILES_DIR: ${{ inputs.files_dir }}
       UPLOAD_RELEASE: ${{ inputs.upload_release }}
 
     steps:
@@ -98,7 +104,7 @@ jobs:
 
     - name: Load custom configuration
       run: |
-        if [ -d files ]; then mv files openwrt/files; fi
+        if [ -n "$FILES_DIR" ] && [ -d "$FILES_DIR" ]; then mv "$FILES_DIR" openwrt/files; fi
         if [ ! -f "$CONFIG_FILE" ]; then
           echo "错误：配置种子 $CONFIG_FILE 不存在" >&2
           exit 1

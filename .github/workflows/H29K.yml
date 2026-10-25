@@ -37,6 +37,7 @@ jobs:
     with:
       config_file: configs/h29k.config
       device_label: H29K
+      files_dir: files/h29k
       upload_release: ${{ github.event.inputs.upload_release != 'false' }}
       ssh: ${{ github.event.inputs.ssh == 'true' }}
     secrets: inherit

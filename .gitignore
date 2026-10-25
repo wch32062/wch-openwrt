@@ -1,0 +1,14 @@
+# 凭据：任何形式的 token 都不许入库（仓库是公开的）
+.token
+*.token
+github_token.txt
+.github/github_token.txt
+*.pem
+*.key
+
+# 本地临时文件 / 构建产物
+work/
+.tmp-*/
+*.img
+*.img.gz
+*.bin

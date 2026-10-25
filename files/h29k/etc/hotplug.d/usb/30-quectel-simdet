@@ -1,0 +1,70 @@
+#!/bin/sh
+# =============================================================================
+# 30-quectel-simdet
+#   H29K 的 SIM 检测脚（QSIMDET）在板子上是浮空的，模组默认把它当"未插卡"，
+#   导致 AT+CPIN? 返回 +CME ERROR: 10、qmodem 一直报 sim card is miss。
+#   这里在模组 USB 枚举后自动关掉 SIM 检测（AT+QSIMDET=0,0），改由电平判断。
+#
+#   执行时机：USB add 事件后延时，等 ttyUSB* 就绪；逐个 AT 口探测，命中即设置。
+# =============================================================================
+
+[ "$ACTION" = "add" ] || exit 0
+case "$DEVPATH" in
+*usb4/4-1*) ;;
+*) [ -d /sys/bus/usb/devices/4-1 ] || exit 0 ;;
+esac
+
+(
+	# 模组枚举后需要几秒才响应 AT
+	sleep 12
+
+	port=""
+	for p in 2 1 0; do
+		[ -e "/dev/ttyUSB$p" ] || continue
+		out=$(sendat "$p" 'ATI' 2>/dev/null)
+		case "$out" in
+		*Quectel* | *RM5*)
+			port="$p"
+			break
+			;;
+		esac
+	done
+	[ -n "$port" ] || exit 0
+
+	# 已经 READY 就不用动
+	if sendat "$port" 'AT+CPIN?' 2>/dev/null | grep -q 'READY'; then
+		logger -t modem_simdet "SIM 已就绪，无需改检测"
+		exit 0
+	fi
+
+	sendat "$port" 'AT+QSIMDET=0,0' >/dev/null 2>&1
+	sendat "$port" 'AT+CFUN=0' >/dev/null 2>&1
+	sleep 3
+	sendat "$port" 'AT+CFUN=1' >/dev/null 2>&1
+	sleep 10
+
+	if sendat "$port" 'AT+CPIN?' 2>/dev/null | grep -q 'READY'; then
+		logger -t modem_simdet "已关闭 QSIMDET，SIM 就绪 (ttyUSB$port)"
+	else
+		logger -t modem_simdet "关闭 QSIMDET 后仍无 SIM，检查卡座/插卡"
+	fi
+
+	# 按 IMSI 前缀补 APN：qmodem 默认用 "auto"，部分卡不会激活 PDP
+	imsi=$(sendat "$port" 'AT+CIMI' 2>/dev/null | tr -d '\r' | grep -E '^[0-9]{15}$' | head -1)
+	case "$imsi" in
+	46000* | 46002* | 46004* | 46007* | 46008*) apn=cmnet ;;
+	46001* | 46006* | 46009*) apn=3gnet ;;
+	46003* | 46005* | 46011*) apn=ctnet ;;
+	*) apn="" ;;
+	esac
+	[ -n "$apn" ] || exit 0
+
+	for sec in $(uci show qmodem 2>/dev/null | sed -n 's/^qmodem\.\([^.]*\)=modem-device$/\1/p'); do
+		cur=$(uci -q get "qmodem.$sec.apn")
+		[ -n "$cur" ] && [ "$cur" != "auto" ] && continue
+		uci set "qmodem.$sec.apn=$apn"
+		uci commit qmodem
+		logger -t modem_simdet "按 IMSI ${imsi%????} 设置 APN=$apn (cfg $sec)"
+		/etc/init.d/qmodem_network restart >/dev/null 2>&1
+	done
+) &

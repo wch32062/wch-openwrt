@@ -1,0 +1,104 @@
+#!/bin/sh
+# =============================================================================
+# 99-h29k-dualwan - 首次启动时把 Wi-Fi 配成可用的 LAN（AP），并确认双上行参数
+#
+# 执行时机（实测）: /etc/init.d/boot 里 config_generate -> wifi config ->
+# uci-defaults，所以此时 /etc/config/wireless 已经由驱动探测生成，可以安全改写。
+# 本脚本成功后会被自动删除；失败（返回非 0）则保留并在下次启动重试。
+# =============================================================================
+
+[ -f /etc/config/netmode ] || exit 0
+[ -x /usr/sbin/h29k-netmode ] || exit 0
+
+# 让监控服务开机自启（镜像里不会自动生成 rc.d 链接）
+[ -x /etc/init.d/h29k-netmode ] && /etc/init.d/h29k-netmode enable
+
+
+# LAN 网段：OpenWrt 默认的 192.168.1.1 与常见光猫/主路由冲突，统一改成 192.168.10.1
+# diy-part2.sh 已经改过 config_generate 的默认值，这里再兜一层，防止默认值从别处来
+case "$(uci -q get network.lan.ipaddr)" in
+"192.168.1.1" | "192.168.100.1" | "")
+	uci set network.lan.ipaddr='192.168.10.1'
+	uci commit network
+	;;
+esac
+
+ssid=$(uci -q get netmode.main.wifi_ssid)
+key=$(uci -q get netmode.main.wifi_key)
+enc=$(uci -q get netmode.main.wifi_encryption)
+[ -n "$enc" ] || enc=psk2
+
+changed=0
+
+# 1) 打开无线设备，国家码缺省填 CN
+i=0
+while uci -q get "wireless.@wifi-device[$i]" >/dev/null 2>&1; do
+	uci set "wireless.@wifi-device[$i].disabled=0"
+	[ -z "$(uci -q get "wireless.@wifi-device[$i].country")" ] &&
+		uci set "wireless.@wifi-device[$i].country=CN"
+	changed=1
+	i=$((i + 1))
+done
+
+# 没有任何无线设备说明驱动没探测到，没必要继续
+[ "$i" = "0" ] && exit 0
+
+# 2) AP 接口挂到 lan、开加密、写入默认 SSID/密码
+i=0
+while uci -q get "wireless.@wifi-iface[$i]" >/dev/null 2>&1; do
+	wmode=$(uci -q get "wireless.@wifi-iface[$i].mode")
+	if [ -n "$wmode" ] && [ "$wmode" != "ap" ]; then
+		i=$((i + 1))
+		continue
+	fi
+
+	uci set "wireless.@wifi-iface[$i].mode=ap"
+	uci set "wireless.@wifi-iface[$i].disabled=0"
+	uci set "wireless.@wifi-iface[$i].network=lan"
+
+	cur_ssid=$(uci -q get "wireless.@wifi-iface[$i].ssid")
+	# 空或还是默认的 OpenWrt 就换成我们的名字；用户已经改过的不动
+	case "$cur_ssid" in
+	"" | "OpenWrt" | "ImmortalWrt")
+		[ -n "$ssid" ] && uci set "wireless.@wifi-iface[$i].ssid=$ssid"
+		;;
+	esac
+
+	cur_key=$(uci -q get "wireless.@wifi-iface[$i].key")
+	cur_enc=$(uci -q get "wireless.@wifi-iface[$i].encryption")
+	if [ -z "$cur_key" ] || [ "$cur_enc" = "none" ] || [ -z "$cur_enc" ]; then
+		if [ -n "$key" ]; then
+			uci set "wireless.@wifi-iface[$i].encryption=$enc"
+			uci set "wireless.@wifi-iface[$i].key=$key"
+			uci -q delete "wireless.@wifi-iface[$i].owe_ptk_workaround"
+		fi
+	fi
+
+	changed=1
+	i=$((i + 1))
+done
+
+[ "$changed" = "1" ] && uci commit wireless
+
+# 3) 把 5G 接口的 metric 补上（有线 10 优先、5G 30 兜底）
+#    注意：不要开 qmodem 的周期扫描——USB 热插拔本身就能识别模组，
+#    开扫描会每 3 秒重复 add 同一个模组，导致反复挂断重拨、PDP 起不来。
+[ "$(uci -q get qmodem.main.enable_usb_scan)" = "1" ] && {
+	uci set qmodem.main.enable_usb_scan='0'
+	uci commit qmodem
+}
+config_load qmodem 2>/dev/null
+_set_metric() {
+	local m
+	m=$(uci -q get "qmodem.$1.metric")
+	[ -n "$m" ] && return 0
+	uci set "qmodem.$1.metric=$(uci -q get netmode.main.modem_metric || echo 30)"
+	uci set "qmodem.$1.defaultroute=1"
+	MODEM_CHANGED=1
+}
+MODEM_CHANGED=0
+config_foreach _set_metric modem-device
+config_foreach _set_metric modem-slot
+[ "$MODEM_CHANGED" = "1" ] && uci commit qmodem
+
+exit 0

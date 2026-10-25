@@ -1,0 +1,26 @@
+--- a/arch/arm64/boot/dts/rockchip/rk3528-opc-h29k.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3528-opc-h29k.dts
+@@ -474,9 +474,9 @@
+ 
+ 	panel@0 {
+ 		status = "okay";
+-		compatible = "sitronix,gc9307";
+-		width = <172>;
+-		height = <320>;
++		compatible = "sitronix,st7789v";
++		width = <135>;
++		height = <240>;
+ 		rotate = <270>;
+ 		debug = <0>;
+ 		spi-cpol;
+@@ -486,8 +486,8 @@
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&lcd_rs_pin>;
+ 		dc-gpios = <&gpio1 RK_PB4 GPIO_ACTIVE_HIGH>;
+-		led-gpios = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
+-		spi-max-frequency = <15000000>;
++		led-gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
++		spi-max-frequency = <6000000>;
+ 		power-supply = <&vcc_3v3_lcd>;
+ 	};
+ };

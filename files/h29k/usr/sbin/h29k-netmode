@@ -1,0 +1,385 @@
+#!/bin/sh
+# =============================================================================
+# h29k-netmode - HinLink H29K 单网口双上行（5G + 有线）模式切换与监控
+#
+#   h29k-netmode status        查看当前模式 / 载波 / 地址
+#   h29k-netmode wan           网线固定作为 WAN（DHCP/PPPoE）
+#   h29k-netmode lan           恢复原厂行为：网线做 LAN
+#   h29k-netmode auto          自动：有载波且能拿到地址就做 WAN，否则 LAN
+#   h29k-netmode apply         按 /etc/config/netmode 立即应用一次
+#   h29k-netmode monitor       由 /etc/init.d/h29k-netmode 调用，常驻监控
+#
+# 背景: 本机只有一个千兆口，5G 由 qmodem 拨号并自带 defaultroute=1。
+#       把 eth0 从 br-lan 里拿出来建成 network.wan，即可让有线口接上游；
+#       有线 metric 10 低于 5G 的 30，因此有线上行优先、5G 自动兜底。
+# =============================================================================
+
+. /lib/functions.sh
+. /lib/functions/system.sh
+
+CONF=netmode
+RUN=/var/run/h29k-netmode
+mkdir -p "$RUN"
+
+log() { logger -t netmode "$*"; echo "$*"; }
+
+cfg()    { uci -q get "$CONF.main.$1"; }
+cfgdef() { local v; v=$(cfg "$1"); [ -n "$v" ] && echo "$v" || echo "$2"; }
+
+# ---------------------------------------------------------------- 设备探测 ---
+DEV=""
+detect_dev() {
+	[ -n "$DEV" ] && return 0
+	DEV=$(cfgdef wan_device '')
+	if [ -z "$DEV" ]; then
+		for n in /sys/class/net/*; do
+			case "${n##*/}" in
+			eth*) DEV="${n##*/}"; break ;;
+			esac
+		done
+	fi
+	[ -n "$DEV" ]
+}
+
+carrier_up() {
+	[ -n "$DEV" ] && [ -r "/sys/class/net/$DEV/carrier" ] &&
+		[ "$(cat "/sys/class/net/$DEV/carrier" 2>/dev/null)" = "1" ]
+}
+
+wan_has_ip() {
+	ip -4 addr show dev "$DEV" 2>/dev/null | grep -q 'inet '
+}
+
+# WiFi 是否还挂在 LAN 上。没有的话把 eth0 变成 WAN 会导致无管理入口，必须拦住。
+wifi_lan_ok() {
+	local i=0 ok=0 down=0
+	while uci -q get "wireless.@wifi-device[$i]" >/dev/null 2>&1; do
+		[ "$(uci -q get "wireless.@wifi-device[$i].disabled")" = "1" ] && down=1
+		i=$((i + 1))
+	done
+	[ "$down" = "1" ] && return 1
+	[ "$i" = "0" ] && return 1
+	i=0
+	while uci -q get "wireless.@wifi-iface[$i]" >/dev/null 2>&1; do
+		[ "$(uci -q get "wireless.@wifi-iface[$i].network")" = "lan" ] && ok=1
+		i=$((i + 1))
+	done
+	[ "$ok" = "1" ]
+}
+
+brlan_idx() {
+	local i=0
+	while uci -q get "network.@device[$i].name" >/dev/null 2>&1; do
+		[ "$(uci -q get "network.@device[$i].name")" = "br-lan" ] && {
+			echo "$i"; return 0
+		}
+		i=$((i + 1))
+	done
+	return 1
+}
+
+applied_mode() {
+	uci -q get network.wan >/dev/null 2>&1 || { echo lan; return; }
+	[ -n "$DEV" ] || { echo wan; return; }
+	# 配置之间也可能不一致（wan 存在但 eth0 还在桥里），按桥成员为准
+	local idx ports
+	idx=$(brlan_idx)
+	if [ -n "$idx" ]; then
+		ports=$(uci -q get "network.@device[$idx].ports")
+		case " $ports " in
+		*" $DEV "*) echo lan; return ;;
+		esac
+	fi
+	echo wan
+}
+
+reload_network() {
+	ubus call network reload >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1
+	sleep 1
+	ifup lan >/dev/null 2>&1
+	[ "$(applied_mode)" = "wan" ] && ifup wan >/dev/null 2>&1
+}
+
+# 固定 MAC：RK3528 的 GMAC 不一定烧录了 MAC，用 eMMC CID 派生，保证每次一致
+ensure_wan_mac() {
+	[ -n "$(uci -q get network.wan.macaddr)" ] && return 0
+	mac=$(macaddr_generate_from_mmc_cid mmcblk0 2>/dev/null)
+	[ -n "$mac" ] && uci set network.wan.macaddr="$mac"
+	return 0
+}
+
+# ------------------------------------------------------------------ 应用 ---
+apply_wan() {
+	local idx proto
+	proto=$(cfgdef wan_proto dhcp)
+
+	uci -q get network.wan >/dev/null 2>&1 || uci set network.wan=interface
+	uci set network.wan.device="$DEV"
+	uci -q delete network.wan.ifname
+	uci set network.wan.proto="$proto"
+	uci set network.wan.metric="$(cfgdef wan_metric 10)"
+	uci set network.wan.defaultroute='1'
+	ensure_wan_mac
+
+	case "$proto" in
+	pppoe)
+		uci set network.wan.username="$(cfgdef wan_username '')"
+		uci set network.wan.password="$(cfgdef wan_password '')"
+		;;
+	static)
+		uci set network.wan.ipaddr="$(cfgdef wan_ipaddr '')"
+		uci set network.wan.netmask="$(cfgdef wan_netmask '255.255.255.0')"
+		uci set network.wan.gateway="$(cfgdef wan_gateway '')"
+		;;
+	esac
+
+	# 把 eth0 从 br-lan 的 ports 里摘掉（只有真的变了才需要重载网桥）
+	local bridged=0
+	idx=$(brlan_idx)
+	if [ -n "$idx" ]; then
+		local ports
+		ports=$(uci -q get "network.@device[$idx].ports")
+		case " $ports " in
+		*" $DEV "*)
+			uci -q del_list "network.@device[$idx].ports=$DEV"
+			bridged=1
+			;;
+		esac
+	fi
+
+	uci commit network
+	log "应用 wan 模式: $DEV -> wan ($proto, metric $(cfgdef wan_metric 10))"
+	if [ "$bridged" = "1" ]; then
+		reload_network          # 桥成员变了，必须整网重载（这一次 Wi-Fi 会瞬断）
+	else
+		ifup wan >/dev/null 2>&1 || true   # 只改参数：不碰 LAN，Wi-Fi 不掉
+	fi
+}
+
+apply_lan() {
+	local idx
+	local need_reload=0
+	idx=$(brlan_idx)
+	if [ -n "$idx" ]; then
+		uci -q del_list "network.@device[$idx].ports=$DEV"
+		uci add_list "network.@device[$idx].ports=$DEV"
+	else
+		uci add network device
+		uci set "network.@device[-1].name=br-lan"
+		uci set "network.@device[-1].type=bridge"
+		uci add_list "network.@device[-1].ports=$DEV"
+		need_reload=1
+	fi
+	uci set network.lan='interface'
+	uci set network.lan.device='br-lan'
+	if uci -q get network.wan >/dev/null 2>&1; then
+		uci -q delete network.wan
+		need_reload=1
+	fi
+
+	uci commit network
+	log "应用 lan 模式: $DEV 归入 br-lan"
+	if [ "$need_reload" = "1" ]; then
+		reload_network
+	else
+		ifup lan >/dev/null 2>&1 || true
+	fi
+}
+
+apply_once() {
+	detect_dev || { log "找不到有线网口，跳过"; return 1; }
+	if [ "$(applied_mode)" = "wan" ] && ! wifi_lan_ok; then
+		apply_lan
+	fi
+	return 0
+}
+
+# --------------------------------------------------- 5G 接口 metric 补写 ---
+UCI_MODEM_CHANGED=0
+_set_dev_metric() {
+	local m
+	m=$(uci -q get "qmodem.$1.metric")
+	[ -n "$m" ] && return 0
+	uci set "qmodem.$1.metric=$(cfgdef modem_metric 30)"
+	uci set "qmodem.$1.defaultroute=1"
+	UCI_MODEM_CHANGED=1
+}
+
+_set_slot_metric() {
+	local m
+	m=$(uci -q get "qmodem.$1.default_metric")
+	[ -n "$m" ] && return 0
+	uci set "qmodem.$1.default_metric=$(cfgdef modem_metric 30)"
+	UCI_MODEM_CHANGED=1
+}
+
+enforce_modem_metric() {
+	UCI_MODEM_CHANGED=0
+	config_load qmodem 2>/dev/null || return 0
+	config_foreach _set_dev_metric modem-device
+	config_foreach _set_slot_metric modem-slot
+	[ "$UCI_MODEM_CHANGED" = "1" ] && {
+		uci commit qmodem
+		log "已把 5G 接口 metric 设为 $(cfgdef modem_metric 30)"
+	}
+	return 0
+}
+
+# ------------------------------------------------------------ 蜂窝上行 ---
+cellular_apply() {
+	local en cur
+	en=$(cfgdef cellular_enabled 1)
+	cur=$(uci -q get qmodem.main.enable_dial)
+	if [ "$en" = "1" ] && [ "$cur" != "1" ]; then
+		uci set qmodem.main.enable_dial='1'
+		uci commit qmodem
+		/etc/init.d/qmodem_network restart >/dev/null 2>&1
+		log "蜂窝上行: 已启用"
+	elif [ "$en" = "0" ] && [ "$cur" = "1" ]; then
+		uci set qmodem.main.enable_dial='0'
+		uci commit qmodem
+		/etc/init.d/qmodem_network restart >/dev/null 2>&1
+		log "蜂窝上行: 已停用"
+	fi
+}
+
+# ---------------------------------------------------------------- 监控循环 ---
+monitor() {
+	local mode c want applied hold probe_start now timeout ticks=0 cfghash="" newhash
+	detect_dev || true
+	applied=$(applied_mode)
+	probe_start=0
+	cfghash=$(uci -q show netmode 2>/dev/null | md5sum | cut -d' ' -f1)
+	log "启动监控: 初始 $( [ "$applied" = wan ] && echo wan || echo lan ) 模式"
+
+	while :; do
+		detect_dev || { sleep 5; continue; }
+		mode=$(cfgdef mode auto)
+		c=0; carrier_up && c=1
+		hold=0; [ -e "$RUN/hold" ] && hold=1
+
+		case "$mode" in
+		lan) want=lan ;;
+		wan) want=wan ;;
+		*)
+			if [ "$c" = "1" ] && [ "$hold" = "0" ]; then want=wan; else want=lan; fi
+			;;
+		esac
+
+		# 以太网上行被关掉时，网线口固定留在 LAN，保证始终有管理入口
+		[ "$(cfgdef ethernet_enabled 1)" = "0" ] && want=lan
+
+		if [ "$want" = "wan" ] && ! wifi_lan_ok; then
+			log "Wi-Fi 没有挂在 LAN 上，拒绝把网线切成 WAN（避免失联）"
+			want=lan
+		fi
+
+		# 配置被改过（协议/账号/metric 等）就重新应用一次，不必整网重载
+		newhash=$(uci -q show netmode 2>/dev/null | md5sum | cut -d' ' -f1)
+		if [ "$newhash" != "$cfghash" ] && [ "$want" != "lan" ]; then
+			cfghash=$newhash
+			apply_wan
+			applied=wan
+		fi
+
+		if [ "$want" != "$applied" ]; then
+			if [ "$want" = "wan" ]; then apply_wan; else apply_lan; fi
+			applied=$want
+			probe_start=0
+		fi
+
+		# auto 模式：切成 WAN 后限时等待 IPv4，拿不到就回落 LAN 并记住
+		if [ "$mode" = "auto" ] && [ "$applied" = "wan" ] && [ "$c" = "1" ]; then
+			if wan_has_ip; then
+				probe_start=0
+			else
+				now=$(date +%s)
+				[ "$probe_start" = "0" ] && probe_start=$now
+				timeout=$(cfgdef auto_lease_timeout 25)
+				if [ $((now - probe_start)) -gt "$timeout" ]; then
+					log "网线有载波但 ${timeout}s 内没有 IPv4，回落 LAN（拔插网线可再次尝试）"
+					touch "$RUN/hold"
+					apply_lan
+					applied=lan
+					probe_start=0
+				fi
+			fi
+		else
+			probe_start=0
+		fi
+
+		# 载波消失：清掉 hold，下次插上可以重新尝试
+		[ "$c" = "0" ] && rm -f "$RUN/hold"
+
+		# 5G 接口 metric 与蜂窝开关每 ~15 秒校对一次即可
+		ticks=$((ticks + 1))
+		if [ $((ticks % 8)) -eq 0 ]; then
+			enforce_modem_metric
+			cellular_apply
+		fi
+		sleep 2
+	done
+}
+
+# -------------------------------------------------------------------- CLI ---
+status() {
+	detect_dev
+	mode=$(cfgdef mode auto)
+	applied=$(applied_mode)
+	c=no; carrier_up && c=yes
+	w=no; wifi_lan_ok && w=yes
+	echo "配置文件模式 : $mode"
+	echo "当前生效模式 : $applied"
+	echo "有线网口     : ${DEV:-未找到}  载波: $c"
+	echo "Wi-Fi 挂 LAN : $w"
+	echo "有线地址     : $(ip -4 -o addr show dev "$DEV" 2>/dev/null | awk '{print $4}' | head -1)"
+	echo "5G 默认路由  : $(ip -4 route | grep '^default' | grep -vE "dev ($DEV|br-lan)" | head -2 | tr '\n' ' ')"
+	echo "默认路由     : $(ip -4 route | grep '^default' | head -3 | tr '\n' ' ')"
+}
+
+set_mode() {
+	uci set "$CONF.main.mode=$1"
+	uci commit "$CONF"
+	rm -f "$RUN/hold"
+	log "模式已设为 $1"
+	detect_dev || return 0
+	case "$1" in
+	wan) apply_wan ;;
+	lan) apply_lan ;;
+	auto)
+		if carrier_up && wifi_lan_ok; then apply_wan; else apply_lan; fi
+		;;
+	esac
+}
+
+case "$1" in
+sts | status) status ;;
+wan | lan | auto) set_mode "$1" ;;
+apply)
+	detect_dev || exit 1
+	mode=$(cfgdef mode auto)
+	if [ "$(cfgdef ethernet_enabled 1)" = "0" ]; then
+		apply_lan
+	elif [ "$mode" = "wan" ]; then
+		apply_wan
+	elif [ "$mode" = "lan" ]; then
+		apply_lan
+	elif carrier_up && wifi_lan_ok; then
+		apply_wan
+	else
+		apply_lan
+	fi
+	cellular_apply
+	;;
+monitor) monitor ;;
+*)
+	cat <<-'EOF'
+	用法: h29k-netmode <status|wan|lan|auto|apply|monitor>
+	  status  当前状态
+	  wan     网线固定做 WAN
+	  lan     恢复原厂：网线做 LAN
+	  auto    自动（有载波且能取到地址就做 WAN）
+	  apply   按 /etc/config/netmode 应用一次
+	EOF
+	;;
+esac

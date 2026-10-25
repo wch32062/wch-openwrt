@@ -1,0 +1,62 @@
+#!/bin/sh /etc/rc.common
+# =============================================================================
+# h29k-netmode - 单网口双上行（5G + 有线）监控服务
+#
+# 各启动阶段顺序（实测自 /etc/init.d/boot）:
+#   config_generate -> wifi config -> uci-defaults -> ... -> network(20) -> ... -> 本服务(95)
+# 所以放在 95 启动，网络与防火墙都已就绪，改完 uci 立即 reload 生效。
+# =============================================================================
+START=95
+STOP=15
+USE_PROCD=1
+
+# 构建镜像时若在 Windows/大小写不敏感的文件系统上完成，像 usr/bin/quectel-cm
+# 与 quectel-CM 只能保留一个；被改名的一份记录在 /etc/h29k-case-links 里，
+# 这里在 overlay 上补回同名符号链接（只在该路径确实不存在时创建）。
+fix_case_links() {
+	local path target dir
+	[ -f /etc/h29k-case-links ] || return 0
+	while IFS="$(printf '\t')" read -r path target; do
+		[ -n "$path" ] && [ -n "$target" ] || continue
+		dir=$(dirname "$path")
+		[ -e "/$path" ] && continue
+		[ -e "/$dir/$target" ] && ln -sfn "$target" "/$path" && logger -t netmode "补链接 /$path -> $target"
+	done < /etc/h29k-case-links
+}
+
+# 模组刚上电时 USB 热插拔事件可能早于 hotplug 服务，导致 30-quectel-simdet
+# 没跑到。这里在启动 20 秒后再补一次：关掉浮空的 SIM 检测脚并做一次射频复位。
+fix_modem_sim() {
+	(
+		sleep 20
+		for p in 2 1 0; do
+			[ -e "/dev/ttyUSB$p" ] || continue
+			sendat "$p" 'ATI' 2>/dev/null | grep -q Quectel || continue
+			sendat "$p" 'AT+CPIN?' 2>/dev/null | grep -q READY && exit 0
+			sendat "$p" 'AT+QSIMDET=0,0' >/dev/null 2>&1
+			sendat "$p" 'AT+CFUN=0' >/dev/null 2>&1
+			sleep 3
+			sendat "$p" 'AT+CFUN=1' >/dev/null 2>&1
+			sleep 8
+			sendat "$p" 'AT+CPIN?' 2>/dev/null | grep -q READY &&
+				logger -t netmode "模组 SIM 已就绪 (ttyUSB$p)"
+			exit 0
+		done
+	) &
+}
+
+start_service() {
+	fix_case_links
+	fix_modem_sim
+	procd_open_instance
+	procd_set_param command /usr/sbin/h29k-netmode monitor
+	procd_set_param respawn
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
+stop_service() {
+	# 只停监控，不改回网络配置：重启后由配置里的 mode 决定
+	:
+}
