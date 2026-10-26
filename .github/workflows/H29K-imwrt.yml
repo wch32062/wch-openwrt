@@ -122,6 +122,9 @@ jobs:
           cp -a "../bsp/$d" "package/"
         done
 
+        # 4.5) fb-tft 去掉对 video-support 的硬依赖（本地验证用，避免它又拉回一堆 video 包）
+        sed -i 's|^  DEPENDS:=video-support $(FBDEV_TARGETS)|  DEPENDS:=$(FBDEV_TARGETS)|' package/kernel/linux/modules/video.mk
+
         # 5) 仓库自带：st7789v 的 fbtft kmod 定义，追加进 video.mk
         #    （这类内核模块包不能单独放 package/，否则缺内核构建上下文会报 No targets specified）
         grep -q 'KernelPackage/fb-tft-st7789v' package/kernel/linux/modules/video.mk || \
@@ -137,6 +140,10 @@ jobs:
     - name: Setup feeds
       run: |
         cd imwrt
+        # 关掉 video feed：它带 qt5base，会和 video-support 形成 kconfig 循环依赖，
+        # 导致 package/kernel/linux 构建失败（CI #2 就死在这）。fbtft 的 kmod 在
+        # package/kernel/linux 里，不需要这个 feed。
+        sed -i 's|^src-git video |#src-git video |' feeds.conf.default
         grep -q '^src-git qmodem' feeds.conf.default || \
           echo 'src-git qmodem https://github.com/FUjr/QModem;main' >> feeds.conf.default
         ./scripts/feeds update -a
