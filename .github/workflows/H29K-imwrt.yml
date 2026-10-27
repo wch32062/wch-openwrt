@@ -23,6 +23,11 @@ on:
         type: string
         required: false
         default: '2048'
+      imwrt_ref:
+        description: 'ImmortalWrt 参考（留空=master 最新；可填 commit/分支）'
+        type: string
+        required: false
+        default: ''
       upload_release:
         description: '是否创建 GitHub Release'
         type: boolean
@@ -33,11 +38,15 @@ on:
         type: boolean
         required: false
         default: false
+  # 每周日 03:00 UTC（北京时间 11:00）自动跟上游编一版
+  schedule:
+    - cron: '0 3 * * 0'
 
 env:
   IMWRT_URL: https://github.com/immortalwrt/immortalwrt
   IMWRT_BRANCH: master
-  IMWRT_COMMIT: e695009c15c623f4f6a83376b505faaf7a4ae5b5
+  # 已知可用（BSP 补丁能干净应用）的 ImmortalWrt 提交，上游漂移导致预检失败时用它兜底
+  IMWRT_FALLBACK: e695009c15c623f4f6a83376b505faaf7a4ae5b5
   BSP_URL: https://github.com/ouyangzq/H29KorH69K-OPENWRT
   BSP_REF: main
   KERNEL_DIR: target/linux/rockchip/patches-6.18
@@ -54,6 +63,7 @@ jobs:
 
     env:
       ROOTFS_MB: ${{ github.event.inputs.rootfs_mb || '2048' }}
+      IMWRT_REF: ${{ github.event.inputs.imwrt_ref }}
       UPLOAD_RELEASE: ${{ github.event.inputs.upload_release != 'false' }}
       DEVICE_LABEL: H29K
       CONFIG_FILE: configs/h29k-imwrt.config
@@ -82,9 +92,13 @@ jobs:
     - name: Clone ImmortalWrt and BSP
       run: |
         git clone --depth 1 -b "$IMWRT_BRANCH" "$IMWRT_URL" imwrt
-        if [ -n "$IMWRT_COMMIT" ]; then
-          ( cd imwrt && git fetch --depth 1 origin "$IMWRT_COMMIT" && git checkout -q FETCH_HEAD ) || \
-            echo "警告：无法切到 $IMWRT_COMMIT，继续用分支最新"
+        # 默认跟 master（拿最新依赖）；也可手动指定 commit/分支
+        if [ -n "$IMWRT_REF" ]; then
+          ( cd imwrt && git fetch --depth 1 origin "$IMWRT_REF" && git checkout -q FETCH_HEAD ) || {
+            echo "::error::无法切到 $IMWRT_REF"; exit 1; }
+          echo "ImmortalWrt 使用指定参考：$IMWRT_REF"
+        else
+          echo "ImmortalWrt 使用 master 最新：$(cd imwrt && git rev-parse --short HEAD)"
         fi
         git clone --depth 1 -b "$BSP_REF" "$BSP_URL" bsp
         du -sh imwrt bsp
@@ -191,7 +205,40 @@ jobs:
         make defconfig
 
         echo "=== 生效的配置 ==="
-        grep -E '^CONFIG_TARGET_PROFILE|^CONFIG_TARGET_ROOTFS_(PARTSIZE|SQUASHFS)|^CONFIG_PACKAGE_(qmodem|luci-app-qmodem|luci-app-openclash)=' .config
+        grep -E '^CONFIG_TARGET_PROFILE|^CONFIG_TARGET_ROOTFS_(PARTSIZE|SQUASHFS)|^CONFIG_PACKAGE_(qmodem|luci-app-qmodem|luci-app-openclash|kmod-fb-tft|kmod-fb-tft-st7789v|video-support|u-boot-generic-rk3528)=' .config
+
+    - name: Preflight check
+      # 目的：把"上游漂移导致补丁插错位置"这类问题在 3 分钟内暴露，
+      # 而不是编了 2.5 小时才在打包阶段失败。
+      run: |
+        cd imwrt
+        fail=0
+        for sym in \
+          CONFIG_TARGET_rockchip_armv8_DEVICE_hinlink_opc-h29k=y \
+          CONFIG_PACKAGE_u-boot-generic-rk3528=y \
+          CONFIG_PACKAGE_qmodem=y \
+          CONFIG_PACKAGE_kmod-fb-tft=y \
+          CONFIG_PACKAGE_kmod-fb-tft-st7789v=y ; do
+          if grep -qx "$sym" .config; then
+            echo "OK   $sym"
+          else
+            echo "MISS $sym"
+            fail=1
+          fi
+        done
+        # 防止 fuzz 静默把内容插到错误位置
+        grep -q '^  generic-rk3528 ' package/boot/uboot-rockchip/Makefile || {
+          echo "::error::u-boot 变体没进 UBOOT_TARGETS（BSP 补丁插入位置变了）"; fail=1; }
+        grep -q '^define Device/hinlink_opc-h29k' target/linux/rockchip/image/armv8.mk || {
+          echo "::error::设备定义缺失"; fail=1; }
+        grep -q 'KernelPackage/fb-tft-st7789v' package/kernel/linux/modules/video.mk || {
+          echo "::error::st7789v 的 kmod 定义没追上"; fail=1; }
+        if [ "$fail" = "1" ]; then
+          echo "::error::预检失败：上游 ImmortalWrt 已漂移，BSP 补丁需要更新"
+          echo "::error::应急办法：用 imwrt_ref=${IMWRT_FALLBACK:-e695009c} 重跑（该提交已验证可编）"
+          exit 1
+        fi
+        echo "预检通过：设备/uboot/qmodem/屏幕驱动都在"
 
     - name: SSH connection to Actions
       uses: mxschmitt/action-tmate@v3
