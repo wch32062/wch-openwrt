@@ -149,6 +149,10 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
+        # 去掉 squeezelite：它的 Config.in 自引用（PACKAGE_squeezelite-custom ↔ SQUEEZELITE_WMA_ALAC），
+        # 会让 kconfig 报 recursive dependency，进而使 package/kernel/linux 的配置不完整而构建失败。
+        rm -rf feeds/packages/sound/squeezelite package/feeds/packages/squeezelite
+
     - name: Copy files overlay
       run: |
         # 仓库 files/h29k 是 rootfs 覆盖层：h29k-netmode（双上行）、Wi-Fi 默认值、
