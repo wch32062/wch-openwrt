@@ -123,6 +123,9 @@ jobs:
 
         # 2) 其余补丁上游有漂移，用 fuzz 应用
         patch -p1 -F3 < ../bsp/openwrt-patches/patches/002-uboot-add-generic-rk35xx.patch
+        # 上游漂移时 002 补丁会把变体插到错误位置（不进 UBOOT_TARGETS / 嵌进别的 define），
+        # 这里用确定性脚本重建，不依赖插入位置
+        sh ../board/h29k/normalize-uboot.sh package/boot/uboot-rockchip/Makefile
         patch -p1 -F3 < ../bsp/dts/patches/002-rockchip-armv8-02network-hinlink-devices.patch
 
         # 注意：不要应用 dts/patches/001-armv8-hinlink-devices.patch
@@ -208,6 +211,9 @@ jobs:
         # "recursive dependency" 并让配置残缺，最终表现是 package/kernel/linux 构建失败。
         # 这里自动把出问题的包从 feeds 里摘掉再重试，最多 6 轮。
         for i in 1 2 3 4 5 6; do
+          # 每轮都从种子重拷：第一轮 kconfig 可能改写 .config 丢掉符号
+          cp "../$CONFIG_FILE" .config
+          sed -i "s/^CONFIG_TARGET_ROOTFS_PARTSIZE=.*/CONFIG_TARGET_ROOTFS_PARTSIZE=${ROOTFS_MB}/" .config
           make defconfig > /tmp/dc.log 2>&1 || true
           n=$(grep -c "recursive dependency" /tmp/dc.log || true)
           if [ "${n:-0}" -eq 0 ]; then
