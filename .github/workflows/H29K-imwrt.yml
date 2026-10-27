@@ -202,10 +202,30 @@ jobs:
         cp "../$CONFIG_FILE" .config
         # 分区大小按输入覆盖
         sed -i "s/^CONFIG_TARGET_ROOTFS_PARTSIZE=.*/CONFIG_TARGET_ROOTFS_PARTSIZE=${ROOTFS_MB}/" .config
-        make defconfig
+
+        # 上游 feeds 里时不时有包自引用（squeezelite、fwknopd…），kconfig 会报
+        # "recursive dependency" 并让配置残缺，最终表现是 package/kernel/linux 构建失败。
+        # 这里自动把出问题的包从 feeds 里摘掉再重试，最多 6 轮。
+        for i in 1 2 3 4 5 6; do
+          make defconfig > /tmp/dc.log 2>&1 || true
+          n=$(grep -c "recursive dependency" /tmp/dc.log || true)
+          if [ "${n:-0}" -eq 0 ]; then
+            echo "defconfig 干净（第 $i 轮）"
+            break
+          fi
+          echo "第 $i 轮发现 $n 处 recursive dependency，自动摘除相关包："
+          grep -oE "(feeds|package)/[A-Za-z0-9_./-]+/Config\.in" /tmp/dc.log | sed "s|/Config\.in$||" | sort -u | while read -r d; do
+            [ -e "$d" ] || continue
+            base=$(basename "$d")
+            echo "  摘除 $d"
+            rm -rf "$d"
+            rm -rf package/feeds/*/"$base"
+          done
+          rm -f tmp/.packageinfo tmp/.config-package.in tmp/.targetinfo
+        done
 
         echo "=== 生效的配置 ==="
-        grep -E '^CONFIG_TARGET_PROFILE|^CONFIG_TARGET_ROOTFS_(PARTSIZE|SQUASHFS)|^CONFIG_PACKAGE_(qmodem|luci-app-qmodem|luci-app-openclash|kmod-fb-tft|kmod-fb-tft-st7789v|video-support|u-boot-generic-rk3528)=' .config
+        grep -E "^CONFIG_TARGET_PROFILE|^CONFIG_TARGET_ROOTFS_(PARTSIZE|SQUASHFS)|^CONFIG_PACKAGE_(qmodem|luci-app-qmodem|luci-app-openclash|kmod-fb-tft|kmod-fb-tft-st7789v|video-support|u-boot-generic-rk3528)=" .config
 
     - name: Preflight check
       # 目的：把"上游漂移导致补丁插错位置"这类问题在 3 分钟内暴露，
