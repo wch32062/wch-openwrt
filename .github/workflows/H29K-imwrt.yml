@@ -16,6 +16,11 @@
 name: H29K (ImmortalWrt)
 
 on:
+  # 提交 ci-trigger.txt 即触发一次构建（在没有 Actions 写权限时使用）
+  push:
+    branches: [ main ]
+    paths:
+      - 'ci-trigger.txt'
   workflow_dispatch:
     inputs:
       rootfs_mb:
