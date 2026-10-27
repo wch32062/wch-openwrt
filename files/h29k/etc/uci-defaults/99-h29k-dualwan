@@ -56,22 +56,15 @@ while uci -q get "wireless.@wifi-iface[$i]" >/dev/null 2>&1; do
 	uci set "wireless.@wifi-iface[$i].disabled=0"
 	uci set "wireless.@wifi-iface[$i].network=lan"
 
-	cur_ssid=$(uci -q get "wireless.@wifi-iface[$i].ssid")
-	# 空或还是默认的 OpenWrt 就换成我们的名字；用户已经改过的不动
-	case "$cur_ssid" in
-	"" | "OpenWrt" | "ImmortalWrt")
-		[ -n "$ssid" ] && uci set "wireless.@wifi-iface[$i].ssid=$ssid"
-		;;
-	esac
-
-	cur_key=$(uci -q get "wireless.@wifi-iface[$i].key")
-	cur_enc=$(uci -q get "wireless.@wifi-iface[$i].encryption")
-	if [ -z "$cur_key" ] || [ "$cur_enc" = "none" ] || [ -z "$cur_enc" ]; then
-		if [ -n "$key" ]; then
-			uci set "wireless.@wifi-iface[$i].encryption=$enc"
-			uci set "wireless.@wifi-iface[$i].key=$key"
-			uci -q delete "wireless.@wifi-iface[$i].owe_ptk_workaround"
-		fi
+	# 首次启动一律写死成我们的 SSID/密码。
+	# 不用"只在为空时才写"：ImmortalWrt 首次启动会自动生成随机密码，
+	# 判断为空会直接跳过，结果 WiFi 密码是随机串而不是 wchzyy520。
+	# 这个脚本本身只在首次启动执行一次（成功后自动删除），不会覆盖用户后来的修改。
+	[ -n "$ssid" ] && uci set "wireless.@wifi-iface[$i].ssid=$ssid"
+	if [ -n "$key" ]; then
+		uci set "wireless.@wifi-iface[$i].encryption=$enc"
+		uci set "wireless.@wifi-iface[$i].key=$key"
+		uci -q delete "wireless.@wifi-iface[$i].owe_ptk_workaround"
 	fi
 
 	changed=1
