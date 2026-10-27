@@ -159,7 +159,7 @@ jobs:
         # 5) 仓库自带：st7789v 的 fbtft kmod 定义，追加进 video.mk
         #    （这类内核模块包不能单独放 package/，否则缺内核构建上下文会报 No targets specified）
         grep -q 'KernelPackage/fb-tft-st7789v' package/kernel/linux/modules/video.mk || \
-          cat ../board/h29k/video-st7789v.mk >> package/kernel/linux/modules/video.mk
+          sed '1s/^\xEF\xBB\xBF//' ../board/h29k/video-st7789v.mk >> package/kernel/linux/modules/video.mk
 
     - name: Add device definition
       run: |

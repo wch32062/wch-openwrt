@@ -1,4 +1,4 @@
-﻿# ST7789V 小屏（1.14 寸 135x240）的 fbtft 驱动
+# ST7789V 小屏（1.14 寸 135x240）的 fbtft 驱动
 # 这棵 ImmortalWrt 的 video.mk 只打包了 gc9307 / ili9486，st7789v 驱动在内核里却没有 kmod 包。
 # 注意：这类内核模块包必须定义在 package/kernel/linux/modules/video.mk 里，
 # 单独的 package 目录会因为缺内核构建上下文而报 "No targets specified"。
