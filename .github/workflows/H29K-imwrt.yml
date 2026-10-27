@@ -39,8 +39,8 @@ on:
         required: false
         default: false
   # 每周日 03:00 UTC（北京时间 11:00）自动跟上游编一版
-  schedule:
-    - cron: '0 3 * * 0'
+#   schedule:
+#     - cron: '0 3 * * 0'
 
 env:
   IMWRT_URL: https://github.com/immortalwrt/immortalwrt
