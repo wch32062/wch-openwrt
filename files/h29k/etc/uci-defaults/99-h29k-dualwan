@@ -12,6 +12,8 @@
 
 # 让监控服务开机自启（镜像里不会自动生成 rc.d 链接）
 [ -x /etc/init.d/h29k-netmode ] && /etc/init.d/h29k-netmode enable
+# 无线凭据兜底：等 wireless 配置稳定后再强制写一次（见 h29k-wifi-defaults）
+[ -x /etc/init.d/h29k-wifi-defaults ] && /etc/init.d/h29k-wifi-defaults enable
 
 
 # LAN 网段：OpenWrt 默认的 192.168.1.1 与常见光猫/主路由冲突，统一改成 192.168.10.1

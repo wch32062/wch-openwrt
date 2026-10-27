@@ -1,0 +1,72 @@
+#!/bin/sh /etc/rc.common
+# =============================================================================
+# h29k-wifi-defaults - 保证 WiFi 一定是 H29K-5G / wchzyy520
+#
+# 为什么需要这个：
+#   1) ImmortalWrt 首次启动会生成随机 WiFi 密码，uci-defaults 里的条件判断
+#      可能跳过写入；
+#   2) 更关键的是时序——/etc/config/wireless 有可能在 uci-defaults 跑完之后
+#      才由驱动探测生成，此时 99-h29k-dualwan 根本看不到 wifi-iface。
+# 所以这里放在开机后期（START=90），等无线配置稳定后再强制写一次，
+# 写成后建标记文件，之后不再动，避免覆盖用户在 LuCI 里的修改。
+# =============================================================================
+
+START=90
+STOP=10
+
+USE_PROCD=0
+
+MARK=/etc/config/.h29k-wifi-done
+CONF=netmode
+
+start() {
+	[ -e "$MARK" ] && return 0
+	[ -f /etc/config/wireless ] || return 0
+
+	local ssid key enc
+	ssid=$(uci -q get $CONF.main.wifi_ssid)
+	key=$(uci -q get $CONF.main.wifi_key)
+	enc=$(uci -q get $CONF.main.wifi_encryption)
+	[ -n "$ssid" ] || ssid='H29K-5G'
+	[ -n "$key" ] || key='wchzyy520'
+	[ -n "$enc" ] || enc='psk2'
+
+	local i=0 changed=0
+	while uci -q get "wireless.@wifi-iface[$i]" >/dev/null 2>&1; do
+		local wmode
+		wmode=$(uci -q get "wireless.@wifi-iface[$i].mode")
+		if [ -z "$wmode" ] || [ "$wmode" = "ap" ]; then
+			uci set "wireless.@wifi-iface[$i].mode=ap"
+			uci set "wireless.@wifi-iface[$i].disabled=0"
+			uci set "wireless.@wifi-iface[$i].ssid=$ssid"
+			uci set "wireless.@wifi-iface[$i].encryption=$enc"
+			uci set "wireless.@wifi-iface[$i].key=$key"
+			uci -q delete "wireless.@wifi-iface[$i].owe_ptk_workaround"
+			[ -z "$(uci -q get "wireless.@wifi-iface[$i].network")" ] &&
+				uci set "wireless.@wifi-iface[$i].network=lan"
+			changed=1
+		fi
+		i=$((i + 1))
+	done
+
+	# 设备层：打开无线、补国家码
+	i=0
+	while uci -q get "wireless.@wifi-device[$i]" >/dev/null 2>&1; do
+		uci set "wireless.@wifi-device[$i].disabled=0"
+		[ -z "$(uci -q get "wireless.@wifi-device[$i].country")" ] &&
+			uci set "wireless.@wifi-device[$i].country=CN"
+		changed=1
+		i=$((i + 1))
+	done
+
+	[ "$changed" = "1" ] || return 0
+
+	uci commit wireless
+	touch "$MARK"
+	logger -t h29k-wifi "WiFi 已设为 $ssid / $enc"
+	( sleep 2; wifi reload >/dev/null 2>&1 ) &
+}
+
+stop() {
+	:
+}

@@ -197,6 +197,7 @@ jobs:
         mkdir -p imwrt/files
         cp -a files/h29k/. imwrt/files/
         chmod 755 imwrt/files/etc/init.d/h29k-netmode \
+                  imwrt/files/etc/init.d/h29k-wifi-defaults \
                   imwrt/files/usr/sbin/h29k-netmode \
                   imwrt/files/etc/uci-defaults/99-h29k-dualwan \
                   imwrt/files/etc/hotplug.d/usb/30-quectel-simdet
