@@ -144,17 +144,14 @@ jobs:
         #    185（RKRNG）在 6.18.55 上也已对不上，去掉只损失硬件随机数加速。
         mkdir -p "$KERNEL_DIR"
         cp ../bsp/dts/kernel-patches/102-arm64-dts-rockchip-add-HINLINK-OPC-H29K.patch "$KERNEL_DIR"/
-        # 102 的板级 dts 把 vcc_3v3_lcd 的使能脚设成 gpio0 PA0，而我们的面板背光
-        # （led-gpios）也用 PA0 —— 同一个脚被稳压器和 fbtft 抢，probe 直接 -EBUSY，屏不亮。
-        # 原厂 1.14 寸那版是"稳压器常开、PA0 只做背光"，这里对齐：去掉使能脚，保留 always-on。
-        sed -i '/enable-active-high;/d; /gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;/d' \
-          ../bsp/dts/kernel-patches/102-arm64-dts-rockchip-add-HINLINK-OPC-H29K.patch
-        echo "102 补丁已去掉 PA0 使能脚（背光留给我们）"
-        cp ../bsp/dts/kernel-patches/107-mmc-core-set-initial-signal-voltage-on-power-off.patch "$KERNEL_DIR"/
-        # 104：把面板节点换成 1.14 寸 ST7789V（135x240 / 6MHz / 背光 gpio0 PA0）。
-        # BSP 默认 dts 是 1.47 寸 GC9307（172x320 / 15MHz / PA1），小屏机器用错就不亮。
-        cp ../board/h29k/104-h29k-panel-st7789v.patch "$KERNEL_DIR"/
-
+        # 用原厂（v3 已验证）设备树替换 102 里的 dts 部分：
+        #   awk 保留 102 的 Makefile hunk，再接上完整 dts hunk
+        awk '/^diff -ruN a\/arch\/arm64\/boot\/dts\/rockchip\/rk3528-opc-h29k.dts/{exit} {print}' \
+          ../bsp/dts/kernel-patches/102-arm64-dts-rockchip-add-HINLINK-OPC-H29K.patch > /tmp/102-head.patch
+        cat /tmp/102-head.patch ../board/h29k/200-h29k-dts-hunk.patch > "$KERNEL_DIR"/102-arm64-dts-rockchip-add-HINLINK-OPC-H29K.patch
+        # 注意：这版设备树直接取自原厂（v3 已验证：屏幕能亮、WiFi 能用），
+        # 只把 fbtft 的背光属性从原厂驱动的 backlight-gpios 改成上游内核认的 led-gpios。
+        # 所以不再需要 104 面板补丁，也不再有 PA0 被稳压器抢占的问题。
         # 4) BSP 功能包（WiFi/屏幕/触摸/风扇/主题等）
         for d in aic8800 aic8800-loader hinlink-settings kmod-fb-tft-gc9307 \
                  kmod-input-touchscreen-axs5106 kmod-saradc-rockchip luci-app-fan-h69k \
