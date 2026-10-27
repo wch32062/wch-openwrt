@@ -23,7 +23,7 @@ on:
         type: string
         required: false
         default: '2048'
-      imwrt_ref:
+      IMWRT_REF: ${{ github.event.inputs.imwrt_ref || (github.event_name == 'schedule' && 'master') || 'e695009c15c623f4f6a83376b505faaf7a4ae5b5' }}
         description: 'ImmortalWrt 参考（留空=master 最新；可填 commit/分支）'
         type: string
         required: false
@@ -63,7 +63,8 @@ jobs:
 
     env:
       ROOTFS_MB: ${{ github.event.inputs.rootfs_mb || '2048' }}
-      IMWRT_REF: ${{ github.event.inputs.imwrt_ref }}
+      # 手动构建默认用已验证的提交（不会被上游漂移打断）；定时构建走 master 跟最新
+      IMWRT_REF: ${{ github.event.inputs.imwrt_ref || (github.event_name == 'schedule' && 'master') || 'e695009c15c623f4f6a83376b505faaf7a4ae5b5' }}
       UPLOAD_RELEASE: ${{ github.event.inputs.upload_release != 'false' }}
       DEVICE_LABEL: H29K
       CONFIG_FILE: configs/h29k-imwrt.config
